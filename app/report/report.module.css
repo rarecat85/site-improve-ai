@@ -1,0 +1,185 @@
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+  margin: 0 0 1rem 0;
+  font-size: 2rem;
+}
+
+.url, .requirement {
+  margin: 0.5rem 0;
+  opacity: 0.9;
+  font-size: 0.95rem;
+}
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.summaryCard {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.summaryCard h3 {
+  margin: 0 0 1rem 0;
+  color: #666;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.summaryNumber {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #667eea;
+  margin: 0;
+}
+
+.summaryText {
+  font-size: 1rem;
+  color: #333;
+  margin: 0;
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.chartContainer {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.chartContainer h3 {
+  margin: 0 0 1rem 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.improvements {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.improvements h2 {
+  margin: 0 0 1.5rem 0;
+  color: #333;
+  font-size: 1.5rem;
+}
+
+.improvementCard {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  transition: box-shadow 0.2s;
+}
+
+.improvementCard:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.improvementHeader {
+  margin-bottom: 1rem;
+}
+
+.improvementHeader h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 1.2rem;
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #f0f0f0;
+  color: #666;
+}
+
+.badge.high {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.badge.medium {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.badge.low {
+  background: #d1fae5;
+  color: #059669;
+}
+
+.description {
+  color: #555;
+  line-height: 1.6;
+  margin: 1rem 0;
+}
+
+.codeExample {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #667eea;
+}
+
+.codeExample h4 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+  font-size: 0.9rem;
+}
+
+.codeExample pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+
+.codeExample code {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

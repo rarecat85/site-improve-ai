@@ -1,0 +1,44 @@
+{
+  "name": "site-improve-ai",
+  "version": "1.0.0",
+  "description": "AI-powered website improvement tool with requirement-based analysis",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lighthouse": "^11.4.0",
+    "chrome-launcher": "^1.0.0",
+    "axe-core": "^4.8.0",
+    "puppeteer": "^21.5.0",
+    "cheerio": "^1.0.0-rc.12",
+    "@google/generative-ai": "^0.2.0",
+    "chart.js": "^4.4.0",
+    "react-chartjs-2": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.3.0",
+    "eslint": "^8.54.0",
+    "eslint-config-next": "^14.0.0"
+  },
+  "keywords": [
+    "ai",
+    "website",
+    "improvement",
+    "optimization",
+    "lighthouse",
+    "accessibility",
+    "seo"
+  ],
+  "author": "",
+  "license": "MIT"
+}
