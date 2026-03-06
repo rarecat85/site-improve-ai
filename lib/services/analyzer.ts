@@ -2,6 +2,7 @@
 import puppeteer from 'puppeteer'
 import * as cheerio from 'cheerio'
 import { runAxe } from '@/lib/utils/axe-runner'
+import { existsSync } from 'node:fs'
 
 export interface AnalysisResults {
   lighthouse: any
@@ -13,6 +14,25 @@ export interface AnalysisResults {
     description?: string
     headings?: string[]
   }
+}
+
+function resolveChromeExecutablePath(): string | undefined {
+  const fromEnv = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_EXECUTABLE_PATH
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+
+  // macOS 기본 설치 경로들
+  if (process.platform === 'darwin') {
+    const candidates = [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      `${process.env.HOME}/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`,
+    ]
+    for (const p of candidates) {
+      if (p && existsSync(p)) return p
+    }
+  }
+
+  return undefined
 }
 
 export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
@@ -39,14 +59,28 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
 
     console.log('Launching Puppeteer browser...')
     // Puppeteer로 브라우저 실행 (Lighthouse와 공유)
-    browser = await puppeteer.launch({ 
-      headless: true,
-      args: [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox',
-        '--remote-debugging-port=9222' // Lighthouse가 사용할 포트
-      ]
-    })
+    const executablePath = resolveChromeExecutablePath()
+    try {
+      browser = await puppeteer.launch({ 
+        headless: true,
+        executablePath,
+        args: [
+          '--no-sandbox', 
+          '--disable-setuid-sandbox',
+          // 고정 포트(예: 9222)는 다른 프로세스와 충돌해 launch 실패를 유발할 수 있어 자동 할당(0) 사용
+          '--remote-debugging-port=0'
+        ]
+      })
+    } catch (launchError: any) {
+      const hint = [
+        'Puppeteer가 실행할 Chrome/Chromium을 찾지 못했습니다.',
+        '해결 방법:',
+        '- (권장) `npx puppeteer browsers install chrome` 실행',
+        '- 또는 시스템 Chrome 경로를 환경변수로 지정: PUPPETEER_EXECUTABLE_PATH=/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome',
+      ].join('\n')
+      const message = launchError instanceof Error ? launchError.message : String(launchError)
+      throw new Error(`${hint}\n\n원본 에러: ${message}`)
+    }
     
     const page = await browser.newPage()
     
@@ -55,12 +89,20 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     try {
       const lighthouseModule = await import('lighthouse')
       const lighthouse = lighthouseModule.default || lighthouseModule
+
+      const wsEndpoint: string | undefined = typeof browser?.wsEndpoint === 'function'
+        ? browser.wsEndpoint()
+        : undefined
+      const debugPort = wsEndpoint ? Number(new URL(wsEndpoint).port) : NaN
+      if (!Number.isFinite(debugPort)) {
+        throw new Error(`Failed to determine Chrome debug port from wsEndpoint: ${wsEndpoint}`)
+      }
       
       const options = {
         logLevel: 'info' as const,
         output: 'json' as const,
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-        port: 9222, // Puppeteer의 디버깅 포트
+        port: debugPort, // Puppeteer가 할당한 디버깅 포트
       }
       
       lighthouseResult = await Promise.race([
