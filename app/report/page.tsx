@@ -31,6 +31,10 @@ interface Improvement {
   difficulty: string
   description: string
   codeExample?: string
+  source?: string
+  category?: string
+  requirementRelevance?: string
+  priorityReason?: string
 }
 
 interface ReportData {
@@ -39,7 +43,30 @@ interface ReportData {
     totalIssues: number
     highPriority: number
     estimatedImpact: string
+    byCategory?: Record<string, number>
+    priorityCriteria?: string
+    requirementAlignment?: string
   }
+  aiseo?: {
+    overallScore?: number
+    grade?: string
+    categories?: Array<{ name?: string; id?: string; score?: number }>
+    recommendations?: string[]
+  }
+}
+
+const CATEGORY_ORDER = ['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO'] as const
+
+function getCategory(item: Improvement): string {
+  const c = (item.category || '').trim()
+  if (CATEGORY_ORDER.includes(c as any)) return c
+  const s = (item.source || '').toLowerCase()
+  if (s.includes('aiseo') || s.includes('aeo') || s.includes('geo')) return 'AEO/GEO'
+  if (s.includes('seo')) return 'SEO'
+  if (s.includes('접근성') || s.includes('axe-core') || s.includes('accessibility')) return '접근성'
+  if (s.includes('성능') || s.includes('performance')) return '성능'
+  if (s.includes('모범') || s.includes('best-practice')) return '모범사례'
+  return c || 'UX/UI'
 }
 
 export default function ReportPage() {
@@ -48,7 +75,23 @@ export default function ReportPage() {
   const [requirement, setRequirement] = useState('')
 
   useEffect(() => {
-    // URL 파라미터에서 데이터 가져오기
+    // 1) localStorage에서 먼저 조회 (대용량 데이터로 431 방지)
+    try {
+      const stored = localStorage.getItem('site-improve-report')
+      if (stored) {
+        const { report, url: storedUrl, requirement: storedReq } = JSON.parse(stored)
+        if (report?.improvements) {
+          setReportData(report)
+          if (storedUrl) setUrl(storedUrl)
+          if (storedReq) setRequirement(storedReq)
+          return
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read report from localStorage:', e)
+    }
+
+    // 2) fallback: URL 파라미터 (짧은 데이터용, 과거 링크 호환)
     const params = new URLSearchParams(window.location.search)
     const data = params.get('data')
     const urlParam = params.get('url')
@@ -58,7 +101,7 @@ export default function ReportPage() {
       try {
         setReportData(JSON.parse(decodeURIComponent(data)))
       } catch (e) {
-        console.error('Failed to parse report data:', e)
+        console.error('Failed to parse report data from URL:', e)
       }
     }
     if (urlParam) setUrl(decodeURIComponent(urlParam))
@@ -68,6 +111,23 @@ export default function ReportPage() {
   if (!reportData) {
     return <div className={styles.container}>리포트 데이터를 불러올 수 없습니다.</div>
   }
+
+  // 항목별 그룹 (표준 순서 유지)
+  const byCategory = reportData.summary.byCategory ?? CATEGORY_ORDER.reduce((acc, key) => {
+    acc[key] = reportData.improvements.filter(i => getCategory(i) === key).length
+    return acc
+  }, {} as Record<string, number>)
+  const otherCount = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getCategory(i) as any)).length
+  if (otherCount > 0) byCategory['기타'] = otherCount
+
+  const groupedImprovements = CATEGORY_ORDER.reduce((acc, cat) => {
+    const items = reportData.improvements.filter(i => getCategory(i) === cat)
+    if (items.length) acc.push({ category: cat, items })
+    return acc
+  }, [] as { category: string; items: Improvement[] }[])
+  // 기타(표준 외) 항목
+  const others = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getCategory(i) as any))
+  if (others.length) groupedImprovements.push({ category: '기타', items: others })
 
   // 우선순위별 통계
   const priorityCounts = {
@@ -113,6 +173,12 @@ export default function ReportPage() {
     ],
   }
 
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom' as const } },
+  }
+
   return (
     <div className={styles.container}>
       <header className={styles.header}>
@@ -136,38 +202,125 @@ export default function ReportPage() {
         </div>
       </section>
 
+      {reportData.aiseo && (
+        <section className={styles.aiseoSection}>
+          <h3>AEO/GEO (AI 검색·인용 준비도)</h3>
+          <div className={styles.aiseoCards}>
+            <div className={styles.aiseoCard}>
+              <span className={styles.aiseoLabel}>전체 점수</span>
+              <span className={styles.aiseoScore}>{reportData.aiseo.overallScore ?? '—'}</span>
+            </div>
+            <div className={styles.aiseoCard}>
+              <span className={styles.aiseoLabel}>등급</span>
+              <span className={styles.aiseoGrade}>{reportData.aiseo.grade ?? '—'}</span>
+            </div>
+          </div>
+          {reportData.aiseo.categories && reportData.aiseo.categories.length > 0 && (
+            <div className={styles.aiseoCategories}>
+              <h4>카테고리별 점수</h4>
+              <div className={styles.aiseoChips}>
+                {reportData.aiseo.categories.map((cat: any, i: number) => (
+                  <span key={i} className={styles.aiseoChip}>
+                    {cat.name ?? cat.id ?? `항목 ${i + 1}`}: {cat.score != null ? Math.round(Number(cat.score)) : '—'}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {reportData.aiseo.recommendations && reportData.aiseo.recommendations.length > 0 && (
+            <div className={styles.aiseoRecs}>
+              <h4>권장 개선사항 (상위)</h4>
+              <ul>
+                {reportData.aiseo.recommendations.slice(0, 5).map((rec: string | { text?: string }, i: number) => (
+                  <li key={i}>{typeof rec === 'string' ? rec : (rec?.text ?? (rec as any)?.message ?? String(rec))}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className={styles.summaryByCategory}>
+        <h3>항목별 개선사항</h3>
+        <div className={styles.categoryChips}>
+          {CATEGORY_ORDER.map(cat => (byCategory[cat] ?? 0) > 0 && (
+            <span key={cat} className={styles.categoryChip}>
+              {cat} <strong>{byCategory[cat]}</strong>건
+            </span>
+          ))}
+          {(byCategory['기타'] ?? 0) > 0 && (
+            <span className={styles.categoryChip}>기타 <strong>{byCategory['기타']}</strong>건</span>
+          )}
+        </div>
+      </section>
+
+      <section className={styles.verification}>
+        <h3>요구사항 대비 정합성</h3>
+        {requirement && <p className={styles.requirementBlock}>입력한 요구사항: “{requirement}”</p>}
+        <p className={styles.verificationText}>
+          {reportData.summary.requirementAlignment ?? '제시된 개선안은 입력하신 요구사항을 반영해 선별되었습니다.'}
+        </p>
+      </section>
+
+      <section className={styles.verification}>
+        <h3>우선순위 기준</h3>
+        <p className={styles.verificationText}>
+          {reportData.summary.priorityCriteria ?? '우선순위는 요구사항 연관도와 영향도를 기준으로 부여되었습니다.'}
+        </p>
+      </section>
+
       <section className={styles.charts}>
         <div className={styles.chartContainer}>
           <h3>우선순위별 분포</h3>
-          <Doughnut data={priorityChartData} />
+          <div className={styles.chartWrap}>
+            <Doughnut data={priorityChartData} options={chartOptions} />
+          </div>
         </div>
         <div className={styles.chartContainer}>
           <h3>구현 난이도 분포</h3>
-          <Doughnut data={difficultyChartData} />
+          <div className={styles.chartWrap}>
+            <Doughnut data={difficultyChartData} options={chartOptions} />
+          </div>
         </div>
       </section>
 
       <section className={styles.improvements}>
-        <h2>개선사항 상세</h2>
-        {reportData.improvements.map((improvement, index) => (
-          <div key={index} className={styles.improvementCard}>
-            <div className={styles.improvementHeader}>
-              <h3>{improvement.title}</h3>
-              <div className={styles.badges}>
-                <span className={`${styles.badge} ${styles[improvement.priority]}`}>
-                  우선순위: {improvement.priority === 'high' ? '높음' : improvement.priority === 'medium' ? '중간' : '낮음'}
-                </span>
-                <span className={styles.badge}>영향도: {improvement.impact}</span>
-                <span className={styles.badge}>난이도: {improvement.difficulty}</span>
+        <h2>개선사항 상세 (항목별)</h2>
+        {groupedImprovements.map(({ category, items }) => (
+          <div key={category} className={styles.improvementGroup}>
+            <h3 className={styles.categoryTitle}>{category} ({items.length}건)</h3>
+            {items.map((improvement, index) => (
+              <div key={index} className={styles.improvementCard}>
+                <div className={styles.improvementHeader}>
+                  <h4>{improvement.title}</h4>
+                  <div className={styles.badges}>
+                    {improvement.source && (
+                      <span className={`${styles.badge} ${styles.source}`}>
+                        {improvement.source}
+                      </span>
+                    )}
+                    <span className={`${styles.badge} ${styles[improvement.priority]}`}>
+                      {improvement.priority === 'high' ? '높음' : improvement.priority === 'medium' ? '중간' : '낮음'}
+                    </span>
+                    <span className={styles.badge}>영향도: {improvement.impact}</span>
+                    <span className={styles.badge}>난이도: {improvement.difficulty}</span>
+                  </div>
+                </div>
+                {improvement.requirementRelevance && (
+                  <p className={styles.relevance}>요구사항과의 일치: {improvement.requirementRelevance}</p>
+                )}
+                {improvement.priorityReason && (
+                  <p className={styles.priorityReason}>우선순위 이유: {improvement.priorityReason}</p>
+                )}
+                <p className={styles.description}>{improvement.description}</p>
+                {improvement.codeExample && (
+                  <div className={styles.codeExample}>
+                    <h4>코드 예시</h4>
+                    <pre><code>{improvement.codeExample}</code></pre>
+                  </div>
+                )}
               </div>
-            </div>
-            <p className={styles.description}>{improvement.description}</p>
-            {improvement.codeExample && (
-              <div className={styles.codeExample}>
-                <h4>코드 예시:</h4>
-                <pre><code>{improvement.codeExample}</code></pre>
-              </div>
-            )}
+            ))}
           </div>
         ))}
       </section>

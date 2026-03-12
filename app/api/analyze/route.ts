@@ -68,15 +68,17 @@ export async function POST(request: NextRequest) {
     // 2단계: Lighthouse 실행
     // 3단계: axe-core 실행
     // 4단계: Puppeteer로 스크린샷 + DOM 추출
+    // AEO/GEO: aiseo-audit (병렬 실행)
     console.log('Step 1-4: Analyzing website...')
-    let analysisResults
-    try {
-      analysisResults = await analyzeWebsite(url)
-      console.log('Website analysis completed')
-    } catch (analyzeError) {
-      console.error('Error in analyzeWebsite:', analyzeError)
-      throw analyzeError
+    const { runAiseoAudit } = await import('@/lib/services/run-aiseo-audit')
+    const [analysisResults, aiseoResult] = await Promise.all([
+      analyzeWebsite(url),
+      runAiseoAudit(url),
+    ])
+    if (aiseoResult != null) {
+      analysisResults.aiseo = aiseoResult
     }
+    console.log('Website analysis completed')
 
     // 5단계: 결과 종합 및 매칭 (AI)
     // 6단계: 개선안 생성 (AI)

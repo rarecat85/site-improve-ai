@@ -21,7 +21,11 @@
     "cheerio": "^1.0.0-rc.12",
     "@google/generative-ai": "^0.2.0",
     "chart.js": "^4.4.0",
-    "react-chartjs-2": "^5.2.0"
+    "react-chartjs-2": "^5.2.0",
+    "aiseo-audit": "^1.4.0"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -42,10 +42,17 @@ export default function Home() {
         throw new Error(data.error || '분석 중 오류가 발생했습니다.')
       }
 
-      // 리포트 데이터가 JSON인 경우 새창으로 열기
+      // 리포트 데이터가 JSON인 경우 localStorage에 저장 후 새 창에서 열기 (URL 길이 제한으로 431 방지)
       if (typeof data.report === 'object' && data.report.improvements) {
-        const reportUrl = `/report?data=${encodeURIComponent(JSON.stringify(data.report))}&url=${encodeURIComponent(url)}&requirement=${encodeURIComponent(requirement)}`
-        window.open(reportUrl, '_blank')
+        const payload = { report: data.report, url, requirement }
+        try {
+          localStorage.setItem('site-improve-report', JSON.stringify(payload))
+        } catch (storageError) {
+          console.error('localStorage setItem failed:', storageError)
+          setResult('리포트 데이터가 너무 커서 저장에 실패했습니다. 브라우저 저장 공간을 확인해주세요.')
+          return
+        }
+        window.open('/report', '_blank')
         setResult('리포트가 새 창에서 열렸습니다.')
       } else {
         setResult(data.report || '분석이 완료되었습니다.')

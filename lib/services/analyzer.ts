@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs'
 export interface AnalysisResults {
   lighthouse: any
   axe: any
+  aiseo?: any
   screenshot?: string
   dom?: string
   metadata?: {

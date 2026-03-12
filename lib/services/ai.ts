@@ -1,13 +1,25 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import {
+  buildLighthouseSummary,
+  formatLighthouseSummaryForPrompt,
+  buildAxeViolationSummaries,
+  formatAxeSummaryForPrompt,
+  formatAiseoSummaryForPrompt,
+} from '@/lib/utils/analysis-summary'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
 
 interface AnalysisResults {
   lighthouse: any
   axe: any
+  aiseo?: any
   screenshot?: string
   dom?: string
-  metadata?: any
+  metadata?: {
+    title?: string
+    description?: string
+    headings?: string[]
+  }
 }
 
 // Gemini API 호출 헬퍼 함수
@@ -85,6 +97,20 @@ axe-core 발견 이슈 수: ${axeSummary}
   return await callGemini(prompt)
 }
 
+/** source 또는 category 문자열에서 표준 카테고리로 매핑 (과거 데이터 호환) */
+function normalizeCategory(category?: string, source?: string): string {
+  const c = (category || '').trim()
+  const s = (source || '').toLowerCase()
+  if (['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO'].includes(c)) return c
+  if (s.includes('aiseo') || s.includes('aeo') || s.includes('geo')) return 'AEO/GEO'
+  if (s.includes('seo')) return 'SEO'
+  if (s.includes('접근성') || s.includes('axe-core') || s.includes('accessibility')) return '접근성'
+  if (s.includes('성능') || s.includes('performance')) return '성능'
+  if (s.includes('모범') || s.includes('best-practice')) return '모범사례'
+  if (c) return c
+  return 'UX/UI'
+}
+
 /**
  * 6단계: 개선안 생성
  */
@@ -103,76 +129,189 @@ ${issues.join('\n')}
 }
 
 /**
- * 7단계: 리포트 생성 (최적화 - 한 번의 AI 호출로 통합)
+ * 7단계: 리포트 생성 — 실제 분석 발견 항목 기반으로 구체적인 개선안 생성
  */
 export async function generateReport(
   requirement: string,
   analysisResults: AnalysisResults
 ): Promise<any> {
-  // 분석 결과 요약
-  const axeViolations = analysisResults.axe?.violations || []
-  const axeCount = axeViolations.length
   const metadata = analysisResults.metadata || {}
+  const lighthouseItems = buildLighthouseSummary(analysisResults.lighthouse)
+  const axeSummaries = buildAxeViolationSummaries(analysisResults.axe)
 
-  // 한 번의 AI 호출로 모든 것을 처리 (속도 개선)
-  const prompt = `요구사항: "${requirement}"
+  const lighthouseText = formatLighthouseSummaryForPrompt(lighthouseItems)
+  const axeText = formatAxeSummaryForPrompt(axeSummaries)
+  const aiseoText = formatAiseoSummaryForPrompt(analysisResults.aiseo)
 
-분석 결과:
-- 접근성 이슈: ${axeCount}개 발견
-- 페이지 제목: ${metadata.title || 'N/A'}
-- 메타 설명: ${metadata.description || 'N/A'}
+  const metaLines = [
+    `페이지 제목: ${metadata.title ?? '없음'}`,
+    `메타 설명: ${metadata.description ?? '없음'}`,
+    `제목 구조(h1,h2,h3): ${(metadata.headings && metadata.headings.length) ? metadata.headings.join(' → ') : '없음'}`,
+  ].join('\n')
 
-위 분석 결과를 바탕으로 요구사항 달성을 위한 핵심 개선사항만 JSON 형식으로 제공해주세요.
-개요, 목표, 배경 설명 등은 제외하고 오직 개선사항만 포함해주세요.
+  const prompt = `당신은 웹 품질 분석 전문가입니다. 아래 "실제 분석 결과"만을 근거로, 요구사항에 맞는 **구체적이고 실행 가능한** 개선안만 제시해주세요.
+배경 설명, 개요, 목표 문단은 쓰지 마세요. 오직 개선사항(improvements)과 요약(summary)만 JSON으로 답하세요.
 
-응답 형식 (JSON):
+## 사용자 요구사항
+${requirement}
+
+## 실제 분석 결과 (이 데이터만 참고할 것)
+
+### 메타데이터
+${metaLines}
+
+### ${lighthouseText}
+
+### ${axeText}
+
+### ${aiseoText}
+
+---
+
+위 발견 항목 중 **사용자 요구사항과의 관련도**를 기준으로 우선순위를 정하세요. 각 개선안은 반드시 위 분석 결과 중 하나 이상(Lighthouse 감사, axe 규칙, 또는 AEO/GEO 권장사항)에 대응해야 합니다.
+
+**필수 규칙:**
+- category: 반드시 다음 중 하나만 사용 — "SEO", "접근성", "UX/UI", "성능", "모범사례", "AEO/GEO"
+- requirementRelevance: "사용자 요구사항과의 일치"를 한 문장으로 설명 (예: "요구사항 '접근성 개선'에 따라 스크린리더 대응을 높이는 수정")
+- priorityReason: 이 항목을 high/medium/low로 판단한 이유를 한 문장으로 (예: "접근성 위반이 심각하고 요구사항과 직접 연관되어 high")
+- description: 어디를 어떻게 고칠지 구체적으로
+- codeExample: 가능한 한 반드시 포함 (실무 복사용)
+- source: "Lighthouse · 성능", "Lighthouse · 접근성", "Lighthouse · SEO", "Lighthouse · 모범 사례", "axe-core · 규칙ID", "aiseo-audit · 카테고리명" 형식
+
+**summary에 추가:**
+- byCategory: 항목별 개선사항 개수. 예: { "SEO": 2, "접근성": 4, "UX/UI": 1, "성능": 0, "모범사례": 1, "AEO/GEO": 0 }
+- priorityCriteria: 우선순위를 매긴 기준을 2~3문장으로 설명 (예: "요구사항과 직접 관련된 항목을 high로, 영향도가 큰 접근성·성능 이슈를 우선으로 함")
+- requirementAlignment: 사용자가 적은 요구사항과 제시된 개선사항이 얼마나 일치하는지 2~3문장으로 검증 요약 (예: "요구사항 '접근성 개선'과 대부분의 개선안이 일치하며, axe-core 위반 해결이 핵심으로 반영됨")
+
+응답은 반드시 아래 JSON 형식만 출력하세요. 다른 설명 없이 JSON만 출력합니다.
+
 {
   "improvements": [
     {
-      "title": "개선사항 제목",
-      "priority": "high|medium|low",
-      "impact": "높음|중간|낮음",
-      "difficulty": "쉬움|보통|어려움",
-      "description": "구체적인 개선 방법 설명",
-      "codeExample": "개선된 코드 예시 (있는 경우)"
+      "title": "개선사항 제목 (한 줄)",
+      "category": "SEO 또는 접근성 또는 UX/UI 또는 성능 또는 모범사례 또는 AEO/GEO",
+      "priority": "high 또는 medium 또는 low",
+      "impact": "높음 또는 중간 또는 낮음",
+      "difficulty": "쉬움 또는 보통 또는 어려움",
+      "description": "구체적인 수정 방법",
+      "codeExample": "개선된 코드 예시",
+      "source": "Lighthouse · 카테고리 또는 axe-core · 규칙ID",
+      "requirementRelevance": "요구사항과의 일치 설명 (한 문장)",
+      "priorityReason": "이 우선순위를 부여한 이유 (한 문장)"
     }
   ],
   "summary": {
     "totalIssues": 숫자,
     "highPriority": 숫자,
-    "estimatedImpact": "예상 효과 요약"
+    "byCategory": { "SEO": 숫자, "접근성": 숫자, "UX/UI": 숫자, "성능": 숫자, "모범사례": 숫자, "AEO/GEO": 숫자 },
+    "estimatedImpact": "한 줄 요약",
+    "priorityCriteria": "우선순위를 매긴 기준 (2~3문장)",
+    "requirementAlignment": "요구사항과 개선안의 일치 여부 검증 (2~3문장)"
   }
 }`
 
   try {
     const response = await callGemini(prompt)
-    
-    // JSON 파싱 시도
+
     try {
-      // JSON 코드 블록 제거
       const jsonMatch = response.match(/\{[\s\S]*\}/)
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0])
+      const raw = jsonMatch ? jsonMatch[0] : response
+      const parsed = JSON.parse(raw)
+
+      // source, category, requirementRelevance, priorityReason 보정
+      if (Array.isArray(parsed.improvements)) {
+        parsed.improvements = parsed.improvements.map((i: any) => ({
+          ...i,
+          source: i.source || '분석 결과',
+          codeExample: i.codeExample ?? '',
+          category: normalizeCategory(i.category, i.source),
+          requirementRelevance: i.requirementRelevance ?? '',
+          priorityReason: i.priorityReason ?? '',
+        }))
       }
-      return JSON.parse(response)
+      if (!parsed.summary) {
+        parsed.summary = {}
+      }
+      const summary = parsed.summary
+      summary.totalIssues = summary.totalIssues ?? parsed.improvements?.length ?? 0
+      summary.highPriority = summary.highPriority ?? parsed.improvements?.filter((i: any) => i.priority === 'high').length ?? 0
+      summary.estimatedImpact = summary.estimatedImpact ?? '요구사항에 따른 개선 효과 기대'
+      if (!summary.byCategory && Array.isArray(parsed.improvements)) {
+        const byCat: Record<string, number> = { SEO: 0, 접근성: 0, 'UX/UI': 0, 성능: 0, 모범사례: 0, 'AEO/GEO': 0 }
+        parsed.improvements.forEach((i: any) => {
+          const c = normalizeCategory(i.category, i.source)
+          byCat[c] = (byCat[c] ?? 0) + 1
+        })
+        summary.byCategory = byCat
+      }
+      summary.priorityCriteria = summary.priorityCriteria ?? '우선순위는 요구사항 연관도와 영향도를 기준으로 부여되었습니다.'
+      summary.requirementAlignment = summary.requirementAlignment ?? '제시된 개선안은 입력하신 요구사항을 반영해 선별되었습니다.'
+      if (analysisResults.aiseo) {
+        const catObj = analysisResults.aiseo.categories || {}
+        const categoriesArray = Object.entries(catObj).map(([key, c]: [string, any]) => ({
+          id: key,
+          name: c?.name,
+          score: c?.score,
+        }))
+        const recs = (analysisResults.aiseo.recommendations || []).map((r: any) =>
+          typeof r === 'string' ? r : (r?.recommendation ?? r?.text ?? String(r))
+        )
+        parsed.aiseo = {
+          overallScore: analysisResults.aiseo.overallScore,
+          grade: analysisResults.aiseo.grade,
+          categories: categoriesArray,
+          recommendations: recs,
+        }
+      }
+      return parsed
     } catch (parseError) {
-      // JSON 파싱 실패 시 기본 구조 반환
-      console.warn('JSON 파싱 실패, 텍스트 반환:', parseError)
-      return {
-        improvements: [{
-          title: '분석 결과',
-          priority: 'medium',
-          impact: '중간',
-          difficulty: '보통',
-          description: response,
-          codeExample: ''
-        }],
+      console.warn('JSON 파싱 실패, 기본 구조 반환:', parseError)
+      const fallback: {
+        improvements: any[]
+        summary: Record<string, any>
+        aiseo?: { overallScore?: number; grade?: string; categories?: any[]; recommendations?: string[] }
+      } = {
+        improvements: [
+          {
+            title: '분석 결과',
+            priority: 'medium',
+            impact: '중간',
+            difficulty: '보통',
+            description: response.slice(0, 500),
+            codeExample: '',
+            source: '분석 결과',
+            category: 'UX/UI',
+            requirementRelevance: '',
+            priorityReason: '',
+          },
+        ],
         summary: {
           totalIssues: 1,
           highPriority: 0,
-          estimatedImpact: '리포트를 확인해주세요'
+          estimatedImpact: '리포트를 확인해주세요',
+          byCategory: { SEO: 0, 접근성: 0, 'UX/UI': 1, 성능: 0, 모범사례: 0, 'AEO/GEO': 0 },
+          priorityCriteria: '우선순위 기준을 확인할 수 없습니다.',
+          requirementAlignment: '요구사항 대비 정합성 검증을 할 수 없습니다.',
+        },
+      }
+      if (analysisResults.aiseo) {
+        const catObj = analysisResults.aiseo.categories || {}
+        const categoriesArray = Object.entries(catObj).map(([key, c]: [string, any]) => ({
+          id: key,
+          name: c?.name,
+          score: c?.score,
+        }))
+        const recs = (analysisResults.aiseo.recommendations || []).map((r: any) =>
+          typeof r === 'string' ? r : (r?.recommendation ?? r?.text ?? String(r))
+        )
+        fallback.aiseo = {
+          overallScore: analysisResults.aiseo.overallScore,
+          grade: analysisResults.aiseo.grade,
+          categories: categoriesArray,
+          recommendations: recs,
         }
       }
+      return fallback
     }
   } catch (error) {
     console.error('Report generation error:', error)
