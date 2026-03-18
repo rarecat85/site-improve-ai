@@ -23,17 +23,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { url, requirement } = body
+    const { url, priorities } = body
 
-    console.log('Received body:', { url: typeof url, requirement: typeof requirement, urlValue: url })
+    console.log('Received body:', { url: typeof url, priorities })
 
-    if (!url || !requirement) {
-      console.log('Missing url or requirement:', { url: !!url, requirement: !!requirement })
+    if (!url) {
       return NextResponse.json(
-        { error: 'URL과 요구사항이 필요합니다.' },
+        { error: 'URL이 필요합니다.' },
         { status: 400 }
       )
     }
+
+    // 우선순위(관심 영역)를 리포트용 요구사항 텍스트로 변환. 없으면 전체 분석.
+    const priorityLabels: Record<string, string> = {
+      seo: 'SEO 최적화',
+      performance: '성능·로딩',
+      accessibility: '접근성',
+      security: '보안',
+      pwa: 'PWA 지원',
+      mobile: '모바일 대응',
+      image: '이미지 최적화',
+      script: '스크립트·리소스',
+      geo: 'AEO/GEO (AI 검색 대응)',
+    }
+    const priorityList = Array.isArray(priorities) ? priorities.slice(0, 3) : []
+    const requirement = priorityList.length
+      ? `사용자 우선 관심 영역: ${priorityList.map((p: string) => priorityLabels[p] || p).join(', ')}. 해당 영역을 우선 반영하고, 모든 분석 항목을 포함합니다.`
+      : '전체 항목 균등 분석. 모든 분석 항목을 포함합니다.'
 
     // URL 형식 검증
     if (typeof url !== 'string') {
@@ -62,7 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Starting analysis for:', url)
-    console.log('Requirement:', requirement)
+    console.log('Requirement (from priorities):', requirement)
 
     // 1단계: 요구사항 해석 및 분석 계획 수립 (AI)
     // 2단계: Lighthouse 실행

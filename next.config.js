@@ -6,7 +6,7 @@ const nextConfig = {
     if (isServer) {
       // 서버 사이드에서만 적용
       // Lighthouse와 chrome-launcher는 ESM 모듈이므로 webpack 번들링에서 완전히 제외
-      const externalPackages = ['lighthouse']
+      const externalPackages = ['lighthouse', 'aiseo-audit']
       
       // externals를 함수로 만들어서 더 정확하게 처리
       const originalExternals = config.externals
@@ -25,8 +25,9 @@ const nextConfig = {
     }
     return config
   },
-  // 서버 컴포넌트에서 외부 패키지로 처리
-  serverComponentsExternalPackages: ['lighthouse', 'puppeteer', 'puppeteer-core'],
+  experimental: {
+    serverComponentsExternalPackages: ['lighthouse', 'puppeteer', 'puppeteer-core', 'aiseo-audit'],
+  },
 }
 
 module.exports = nextConfig
