@@ -289,16 +289,6 @@
   color: #d4d4d8;
 }
 
-/* Footer */
-.footer {
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  text-align: center;
-  font-size: 0.75rem;
-  color: #6b7280;
-  letter-spacing: 0.02em;
-}
-
 /* Loading screen */
 .loadingScreen {
   position: fixed;
@@ -312,7 +302,9 @@
 
 .loadingContent {
   text-align: center;
-  max-width: 420px;
+  min-width: 36rem;
+  max-width: min(90vw, 42rem);
+  width: 100%;
   padding: 2rem;
 }
 
@@ -351,7 +343,7 @@
 
 .loadingTitle {
   font-family: 'Pretendard', sans-serif;
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 500;
   color: #fff;
   margin: 0 0 1.5rem;
@@ -398,6 +390,7 @@
   color: #9ca3af;
   font-weight: 300;
   margin: 0 0 0.25rem;
+  white-space: nowrap;
 }
 
 .footer {

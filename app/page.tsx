@@ -18,6 +18,33 @@ const FOCUS_OPTIONS: { id: string; label: string }[] = [
 
 const MAX_PRIORITIES = 3
 
+const LOADING_MESSAGES = [
+  '웹브라우저를 열어보는 중입니다.',
+  '주요 타겟과 목적을 분석해보는 중입니다.',
+  '잘 이해되지 않는 목적을 이해하려 노력중입니다.',
+  '전세계 사이트들을 뒤져서 경쟁사를 찾는 중입니다.',
+  '로딩 속도 확인을 위해 매우 느린 환경에서 테스트하는 중입니다.',
+  '접근성 검증을 위해 스크린리더로 들어보고 싶은데 귀가 없어서 안타까워하는 중입니다.',
+  '보안이 얼마나 철저한지 모의 해킹시도를 해보..지는 못했습니다.',
+  '얼마나 효율적인 스크립트를 짰는지 면접관의 눈으로 확인합니다.',
+  '잘 만들어진 부분을 보며 감탄 및 학습하고 있습니다.',
+  '검색엔진 노출에도 신경썼는지 검색해보는 중입니다.',
+  'AI가 좋아하는 사이트일지 친구들에게 물어보는 중입니다.',
+  '마케터들에게 무엇이 부족한지 연락해보는 중입니다.',
+  '너무 많은 정보를 받아 정리하기가 힘듭니다.',
+  '우선순위에 맞는 해결방안을 곰곰히 고민하고 있습니다.',
+  '팩트를 기반으로 하기위해 근거를 만들어보는... 중입니다.',
+  '누가봐도 이해할수있도록 쉽게 설명하기 위해 텍스트 작성중입니다.',
+  '미완료된 작업을 체크하는 중입니다.',
+  '퇴근하고 싶습니다.',
+  '조금만 더 기다려 주세요.'
+]
+
+function getLoadingMessage(messageTick: number): string {
+  const index = Math.min(messageTick, LOADING_MESSAGES.length - 1)
+  return LOADING_MESSAGES[index]
+}
+
 export default function Home() {
   const router = useRouter()
   const [mode, setMode] = useState<'single' | 'comparison'>('single')
@@ -26,16 +53,18 @@ export default function Home() {
   const [priorities, setPriorities] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
+  const [messageTick, setMessageTick] = useState(0)
   const [result, setResult] = useState<string | null>(null)
 
   useEffect(() => {
     if (!loading) {
       setProgress(0)
+      setMessageTick(0)
       return
     }
     const interval = setInterval(() => {
-      setProgress((p) => (p >= 90 ? 90 : p + 4))
-    }, 400)
+      setMessageTick((t) => (t >= LOADING_MESSAGES.length - 1 ? t : t + 1))
+    }, 2500)
     return () => clearInterval(interval)
   }, [loading])
 
@@ -49,12 +78,9 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (mode === 'comparison') return
     if (!url.trim()) {
       alert('분석할 URL을 입력해주세요.')
-      return
-    }
-    if (mode === 'comparison' && !url2.trim()) {
-      alert('비교할 두 번째 URL을 입력해주세요.')
       return
     }
 
@@ -63,28 +89,74 @@ export default function Home() {
     let navigated = false
 
     try {
-      const body = mode === 'comparison'
-        ? { url: url.trim(), url2: url2.trim(), priorities, mode: 'comparison' }
-        : { url: url.trim(), priorities }
+      const body = { url: url.trim(), priorities }
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
 
-      const contentType = response.headers.get('content-type')
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text()
-        console.error('Non-JSON response:', text.substring(0, 200))
-        throw new Error('서버에서 JSON이 아닌 응답을 받았습니다.')
+      const contentType = response.headers.get('content-type') || ''
+      const isStream =
+        response.ok &&
+        (contentType.includes('application/x-ndjson') || contentType.includes('text/event-stream')) &&
+        response.body
+
+      if (isStream) {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              const data = JSON.parse(line)
+              if (data.type === 'progress' && typeof data.value === 'number') {
+                setProgress(data.value)
+              }
+              if (data.type === 'report' && data.report?.improvements) {
+                const requirementText = priorities.length
+                  ? '우선 관심 영역: ' + priorities.map((id) => FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
+                  : '전체 항목 분석'
+                const payload = {
+                  report: data.report,
+                  url: url.trim(),
+                  requirement: requirementText,
+                  priorities,
+                }
+                try {
+                  localStorage.setItem('site-improve-report', JSON.stringify(payload))
+                } catch (storageError) {
+                  console.error('localStorage setItem failed:', storageError)
+                  setResult('리포트 데이터가 너무 커서 저장에 실패했습니다.')
+                  return
+                }
+                navigated = true
+                router.push('/report')
+                return
+              }
+              if (data.type === 'error') {
+                throw new Error(data.error || '분석 중 오류가 발생했습니다.')
+              }
+            } catch (parseErr: any) {
+              if (parseErr?.message && !parseErr.message.includes('JSON')) throw parseErr
+            }
+          }
+        }
+        return
       }
 
-      const data = await response.json()
-
       if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
         throw new Error(data.error || '분석 중 오류가 발생했습니다.')
       }
 
+      const data = await response.json()
       if (typeof data.report === 'object' && data.report.improvements) {
         const requirementText = priorities.length
           ? '우선 관심 영역: ' + priorities.map((id) => FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
@@ -92,7 +164,6 @@ export default function Home() {
         const payload = {
           report: data.report,
           url: url.trim(),
-          ...(mode === 'comparison' && { url2: url2.trim() }),
           requirement: requirementText,
           priorities,
         }
@@ -106,9 +177,8 @@ export default function Home() {
         navigated = true
         router.push('/report')
         return
-      } else {
-        setResult(data.report || '분석이 완료되었습니다.')
       }
+      setResult(data.report || '분석이 완료되었습니다.')
     } catch (error) {
       console.error('Error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -134,8 +204,7 @@ export default function Home() {
           <div className={styles.loadingProgressBar}>
             <div className={styles.loadingProgressFill} style={{ width: `${progress}%` }} />
           </div>
-          <p className={styles.loadingSubtext}>Gathering performance metrics and SEO data.</p>
-          <p className={styles.loadingSubtext}>Please wait for a few moments.</p>
+          <p className={styles.loadingSubtext}>{getLoadingMessage(messageTick)}</p>
         </div>
       </div>
     )
@@ -217,8 +286,8 @@ export default function Home() {
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com"
               className={styles.urlInput}
-              required
-              disabled={loading}
+              required={mode !== 'comparison'}
+              disabled={loading || mode === 'comparison'}
             />
             {mode === 'comparison' && (
               <input
@@ -227,8 +296,8 @@ export default function Home() {
                 onChange={(e) => setUrl2(e.target.value)}
                 placeholder="https://example-secondary.com"
                 className={styles.urlInput}
-                required={mode === 'comparison'}
-                disabled={loading}
+                required={false}
+                disabled={true}
                 aria-label="두 번째 URL"
               />
             )}
@@ -249,7 +318,7 @@ export default function Home() {
                     type="button"
                     className={`${styles.pill} ${active ? styles.pillActive : ''}`}
                     onClick={() => togglePriority(opt.id)}
-                    disabled={loading}
+                    disabled={loading || mode === 'comparison'}
                   >
                     {opt.label}
                   </button>
@@ -258,8 +327,8 @@ export default function Home() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading} className={styles.cta}>
-            {loading ? 'Analyzing...' : 'START ANALYSIS'}
+          <button type="submit" disabled={loading || mode === 'comparison'} className={styles.cta}>
+            {mode === 'comparison' ? 'Coming soon' : loading ? 'Analyzing...' : 'START ANALYSIS'}
           </button>
         </form>
 

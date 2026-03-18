@@ -80,47 +80,57 @@ export async function POST(request: NextRequest) {
     console.log('Starting analysis for:', url)
     console.log('Requirement (from priorities):', requirement)
 
-    // 1단계: 요구사항 해석 및 분석 계획 수립 (AI)
-    // 2단계: Lighthouse 실행
-    // 3단계: axe-core 실행
-    // 4단계: Puppeteer로 스크린샷 + DOM 추출
-    // AEO/GEO: aiseo-audit (병렬 실행)
-    console.log('Step 1-4: Analyzing website...')
-    const { runAiseoAudit } = await import('@/lib/services/run-aiseo-audit')
-    const [analysisResults, aiseoResult] = await Promise.all([
-      analyzeWebsite(url),
-      runAiseoAudit(url),
-    ])
-    if (aiseoResult != null) {
-      analysisResults.aiseo = aiseoResult
-    }
-    console.log('Website analysis completed')
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (obj: object) => {
+          controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'))
+        }
+        try {
+          send({ type: 'progress', value: 5 })
 
-    // 5단계: 결과 종합 및 매칭 (AI)
-    // 6단계: 개선안 생성 (AI)
-    // 7단계: 리포트 생성 (AI) + 페이지 요약·타겟층 분석 (AI, 병렬)
-    console.log('Step 5-7: Generating report and content insights...')
-    let report
-    try {
-      const [reportResult, contentInsights] = await Promise.all([
-        generateReport(requirement, analysisResults),
-        analyzeContentInsights(analysisResults),
-      ])
-      report = reportResult
-      if (contentInsights) {
-        report.contentSummary = contentInsights.contentSummary
-        report.targetAudience = contentInsights.targetAudience
-      }
-      console.log('Report generation completed')
-    } catch (reportError) {
-      console.error('Error in generateReport:', reportError)
-      throw reportError
-    }
+          const { runAiseoAudit } = await import('@/lib/services/run-aiseo-audit')
+          console.log('Step 1-4: Analyzing website...')
+          const analysisResults = await analyzeWebsite(url)
+          send({ type: 'progress', value: 45 })
 
-    console.log('Returning response')
-    return NextResponse.json({ report }, {
+          console.log('Running AEO/GEO audit...')
+          const aiseoResult = await runAiseoAudit(url)
+          if (aiseoResult != null) {
+            analysisResults.aiseo = aiseoResult
+          }
+          send({ type: 'progress', value: 55 })
+
+          console.log('Step 5-7: Generating report and content insights...')
+          const [reportResult, contentInsights] = await Promise.all([
+            generateReport(requirement, analysisResults),
+            analyzeContentInsights(analysisResults),
+          ])
+          const report = reportResult
+          if (contentInsights) {
+            report.contentSummary = contentInsights.contentSummary
+            report.targetAudience = contentInsights.targetAudience
+          }
+          send({ type: 'progress', value: 95 })
+          send({ type: 'report', report })
+          send({ type: 'progress', value: 100 })
+        } catch (streamError: any) {
+          console.error('Analysis error:', streamError)
+          let errorMessage = streamError?.message || '분석 중 오류가 발생했습니다.'
+          if (errorMessage.includes('API_KEY')) errorMessage = 'Gemini API 키가 유효하지 않습니다. .env.local 파일을 확인해주세요.'
+          else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) errorMessage = '분석 시간이 초과되었습니다. 더 작은 웹사이트로 시도해보세요.'
+          else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) errorMessage = '웹사이트에 연결할 수 없습니다. URL을 확인해주세요.'
+          send({ type: 'error', error: errorMessage })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-store',
       },
     })
   } catch (error) {
