@@ -275,6 +275,21 @@
   transform: none;
 }
 
+.previewLink {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
+.previewLink a {
+  color: #34d399;
+  text-decoration: none;
+}
+
+.previewLink a:hover {
+  text-decoration: underline;
+}
+
 /* Result */
 .result {
   margin-top: 1.5rem;

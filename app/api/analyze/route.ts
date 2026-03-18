@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     // 동적 import로 에러 방지
     const { analyzeWebsite } = await import('@/lib/services/analyzer')
-    const { generateReport, analyzeContentInsights } = await import('@/lib/services/ai')
+    const { generateReport, analyzeContentInsights, findSimilarSites } = await import('@/lib/services/ai')
     // 요청 본문 파싱
     let body
     try {
@@ -110,6 +110,19 @@ export async function POST(request: NextRequest) {
           if (contentInsights) {
             report.contentSummary = contentInsights.contentSummary
             report.targetAudience = contentInsights.targetAudience
+          }
+          send({ type: 'progress', value: 85 })
+          if (contentInsights?.contentSummary && contentInsights?.targetAudience) {
+            try {
+              const similarSites = await findSimilarSites(
+                url,
+                contentInsights.contentSummary,
+                contentInsights.targetAudience
+              )
+              if (similarSites?.length) report.similarSites = similarSites
+            } catch (e) {
+              console.warn('findSimilarSites failed:', e)
+            }
           }
           send({ type: 'progress', value: 95 })
           send({ type: 'report', report })

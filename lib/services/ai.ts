@@ -28,6 +28,14 @@ export interface ContentInsights {
   targetAudience: string
 }
 
+/** 유사·경쟁 사이트 1건 (목적·타겟 일치도 + 규모/유명도 기준 상위 3개) */
+export interface SimilarSite {
+  url: string
+  name?: string
+  matchReason?: string
+  fameReason?: string
+}
+
 // Gemini API 호출 헬퍼 함수
 async function callGemini(prompt: string): Promise<string> {
   if (!process.env.GEMINI_API_KEY) {
@@ -105,6 +113,52 @@ ${pageText.slice(0, 10000)}
     }
   } catch (e) {
     console.warn('Content insights parsing failed:', e)
+  }
+  return null
+}
+
+/**
+ * 분석된 사이트의 목적·타겟층을 기준으로 유사·경쟁 사이트 후보를 찾고,
+ * 목적·타겟 일치도 + 기업 규모/유명도로 점수화해 상위 3개만 반환
+ */
+export async function findSimilarSites(
+  pageUrl: string,
+  contentSummary: string,
+  targetAudience: string
+): Promise<SimilarSite[] | null> {
+  const prompt = `다음 웹사이트는 현재 분석 대상입니다.
+- URL: ${pageUrl}
+- 페이지 요약: ${contentSummary}
+- 주요 타겟층: ${targetAudience}
+
+이 사이트와 **목적·타겟층이 비슷한 실제 유사 사이트 또는 경쟁사**를 생각해보세요.
+1) 목적·타겟 일치도가 높은 사이트일수록 좋고,
+2) 기업 규모·브랜드 인지도가 있는 사이트를 우선합니다.
+
+실제로 존재하는 사이트만 제시하고, 반드시 정확한 메인 URL(https 포함)을 적어주세요.
+한국·글로벌 모두 가능하며, 업종·규모에 맞는 잘 알려진 사이트 3개만 선정해주세요.
+
+응답은 반드시 아래 JSON 형식만 출력하세요. 다른 설명은 붙이지 마세요.
+{"sites":[{"url":"https://...","name":"사이트명","matchReason":"목적·타겟이 왜 비슷한지 한 문장","fameReason":"규모·유명도 관련 한 문장"}]}
+최대 3개만 포함하고, url/name/matchReason/fameReason은 모두 문자열로 주세요.`
+
+  try {
+    const response = await callGemini(prompt)
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    const raw = jsonMatch ? jsonMatch[0] : response
+    const parsed = JSON.parse(raw) as { sites?: SimilarSite[] }
+    const sites = parsed?.sites
+    if (Array.isArray(sites) && sites.length > 0) {
+      const top3 = sites.slice(0, 3).map((s: SimilarSite) => ({
+        url: typeof s.url === 'string' ? s.url.trim() : '',
+        name: typeof s.name === 'string' ? s.name.trim() : undefined,
+        matchReason: typeof s.matchReason === 'string' ? s.matchReason.trim() : undefined,
+        fameReason: typeof s.fameReason === 'string' ? s.fameReason.trim() : undefined,
+      })).filter((s: SimilarSite) => s.url.startsWith('http'))
+      return top3.length > 0 ? top3 : null
+    }
+  } catch (e) {
+    console.warn('findSimilarSites parsing failed:', e)
   }
   return null
 }

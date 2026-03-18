@@ -32,10 +32,12 @@ const LOADING_MESSAGES = [
   'AI가 좋아하는 사이트일지 친구들에게 물어보는 중입니다.',
   '마케터들에게 무엇이 부족한지 연락해보는 중입니다.',
   '너무 많은 정보를 받아 정리하기가 힘듭니다.',
+  '각 항목별 평가점수도 매겨보는 중입니다.',
   '우선순위에 맞는 해결방안을 곰곰히 고민하고 있습니다.',
   '팩트를 기반으로 하기위해 근거를 만들어보는... 중입니다.',
   '누가봐도 이해할수있도록 쉽게 설명하기 위해 텍스트 작성중입니다.',
   '미완료된 작업을 체크하는 중입니다.',
+  '오타를 찾고 있습니다.',
   '퇴근하고 싶습니다.',
   '조금만 더 기다려 주세요.'
 ]
@@ -330,6 +332,10 @@ export default function Home() {
           <button type="submit" disabled={loading || mode === 'comparison'} className={styles.cta}>
             {mode === 'comparison' ? 'Coming soon' : loading ? 'Analyzing...' : 'START ANALYSIS'}
           </button>
+          <p className={styles.previewLink}>
+            <a href="/report?preview=1" target="_blank" rel="noopener noreferrer">결과 페이지 미리보기</a>
+            — 화면 확인·수정 후 반영용
+          </p>
         </form>
 
         {result && (
