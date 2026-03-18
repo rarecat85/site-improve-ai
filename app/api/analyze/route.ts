@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   try {
     // 동적 import로 에러 방지
     const { analyzeWebsite } = await import('@/lib/services/analyzer')
-    const { generateReport } = await import('@/lib/services/ai')
+    const { generateReport, analyzeContentInsights } = await import('@/lib/services/ai')
     // 요청 본문 파싱
     let body
     try {
@@ -82,11 +82,19 @@ export async function POST(request: NextRequest) {
 
     // 5단계: 결과 종합 및 매칭 (AI)
     // 6단계: 개선안 생성 (AI)
-    // 7단계: 리포트 생성 (AI)
-    console.log('Step 5-7: Generating report...')
+    // 7단계: 리포트 생성 (AI) + 페이지 요약·타겟층 분석 (AI, 병렬)
+    console.log('Step 5-7: Generating report and content insights...')
     let report
     try {
-      report = await generateReport(requirement, analysisResults)
+      const [reportResult, contentInsights] = await Promise.all([
+        generateReport(requirement, analysisResults),
+        analyzeContentInsights(analysisResults),
+      ])
+      report = reportResult
+      if (contentInsights) {
+        report.contentSummary = contentInsights.contentSummary
+        report.targetAudience = contentInsights.targetAudience
+      }
       console.log('Report generation completed')
     } catch (reportError) {
       console.error('Error in generateReport:', reportError)

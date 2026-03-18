@@ -20,6 +20,12 @@ interface AnalysisResults {
     description?: string
     headings?: string[]
   }
+  pageText?: string
+}
+
+export interface ContentInsights {
+  contentSummary: string
+  targetAudience: string
 }
 
 // Gemini API 호출 헬퍼 함수
@@ -54,6 +60,53 @@ async function callGemini(prompt: string): Promise<string> {
     
     throw new Error(`Gemini API 오류: ${error?.message || '알 수 없는 오류'}`)
   }
+}
+
+/**
+ * URL 페이지 본문을 바탕으로 전체 내용 요약 + 주요 타겟층 분석 (한 번의 API 호출)
+ */
+export async function analyzeContentInsights(analysisResults: AnalysisResults): Promise<ContentInsights | null> {
+  const pageText = analysisResults.pageText?.trim()
+  const meta = analysisResults.metadata || {}
+  if (!pageText || pageText.length < 50) return null
+
+  const metaLines = [
+    `제목: ${meta.title ?? '없음'}`,
+    `메타 설명: ${meta.description ?? '없음'}`,
+    `제목 구조: ${(meta.headings && meta.headings.length) ? meta.headings.join(' → ') : '없음'}`,
+  ].join('\n')
+
+  const prompt = `다음은 웹 페이지에서 추출한 본문 텍스트와 메타데이터입니다.
+
+## 메타데이터
+${metaLines}
+
+## 페이지 본문 (일부)
+${pageText.slice(0, 10000)}
+
+위 내용만을 근거로 다음 두 가지를 JSON으로만 답해주세요. 다른 설명은 붙이지 마세요.
+
+1) contentSummary: 페이지 전체 내용을 3~5문장으로 요약 (주제, 제공 정보, CTA 등).
+2) targetAudience: 이 페이지의 주요 타겟층 분석 (연령·관심사·니즈, B2B/B2C 등)을 3~5문장으로.
+
+응답 형식 (JSON만 출력):
+{"contentSummary":"...","targetAudience":"..."}`
+
+  try {
+    const response = await callGemini(prompt)
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    const raw = jsonMatch ? jsonMatch[0] : response
+    const parsed = JSON.parse(raw) as ContentInsights
+    if (typeof parsed.contentSummary === 'string' && typeof parsed.targetAudience === 'string') {
+      return {
+        contentSummary: parsed.contentSummary.trim(),
+        targetAudience: parsed.targetAudience.trim(),
+      }
+    }
+  } catch (e) {
+    console.warn('Content insights parsing failed:', e)
+  }
+  return null
 }
 
 /**
@@ -149,7 +202,10 @@ export async function generateReport(
     `제목 구조(h1,h2,h3): ${(metadata.headings && metadata.headings.length) ? metadata.headings.join(' → ') : '없음'}`,
   ].join('\n')
 
-  const prompt = `당신은 웹 품질 분석 전문가입니다. 아래 "실제 분석 결과"만을 근거로, 요구사항에 맞는 **구체적이고 실행 가능한** 개선안만 제시해주세요.
+  const prompt = `당신은 웹 품질 분석 전문가입니다. 아래 "실제 분석 결과"에 있는 **모든** 발견 항목에 대해 구체적이고 실행 가능한 개선안을 제시해주세요.
+- 요구사항에 포함되지 않은 항목도 **기본 분석**으로 모두 포함합니다.
+- **목록 순서**: 사용자 요구사항과 일치하는 항목을 **맨 앞**에 배치하고, 나머지는 카테고리·영향도 순으로 배치하세요.
+- 각 개선안은 반드시 위 분석 결과 중 하나 이상(Lighthouse 감사, axe 규칙, 또는 AEO/GEO 권장사항)에 대응해야 합니다.
 배경 설명, 개요, 목표 문단은 쓰지 마세요. 오직 개선사항(improvements)과 요약(summary)만 JSON으로 답하세요.
 
 ## 사용자 요구사항
@@ -168,20 +224,20 @@ ${metaLines}
 
 ---
 
-위 발견 항목 중 **사용자 요구사항과의 관련도**를 기준으로 우선순위를 정하세요. 각 개선안은 반드시 위 분석 결과 중 하나 이상(Lighthouse 감사, axe 규칙, 또는 AEO/GEO 권장사항)에 대응해야 합니다.
-
 **필수 규칙:**
 - category: 반드시 다음 중 하나만 사용 — "SEO", "접근성", "UX/UI", "성능", "모범사례", "AEO/GEO"
-- requirementRelevance: "사용자 요구사항과의 일치"를 한 문장으로 설명 (예: "요구사항 '접근성 개선'에 따라 스크린리더 대응을 높이는 수정")
-- priorityReason: 이 항목을 high/medium/low로 판단한 이유를 한 문장으로 (예: "접근성 위반이 심각하고 요구사항과 직접 연관되어 high")
+- matchesRequirement: 이 개선안이 위 "사용자 요구사항"과 직접 관련되면 true, 아니면 false (기본 품질 개선만 해당하면 false)
+- requirementRelevance: 요구사항과 직접 관련된 경우 "요구사항과의 일치" 한 문장; 관련 없으면 "요구사항에는 미포함, 기본 품질·품질 개선 항목" 등 한 문장
+- priority: 요구사항과 일치하는 항목은 high 또는 medium을 부여하고, 그 외도 영향도에 따라 high/medium/low 부여
+- priorityReason: 우선순위를 부여한 이유 한 문장
 - description: 어디를 어떻게 고칠지 구체적으로
 - codeExample: 가능한 한 반드시 포함 (실무 복사용)
 - source: "Lighthouse · 성능", "Lighthouse · 접근성", "Lighthouse · SEO", "Lighthouse · 모범 사례", "axe-core · 규칙ID", "aiseo-audit · 카테고리명" 형식
 
 **summary에 추가:**
-- byCategory: 항목별 개선사항 개수. 예: { "SEO": 2, "접근성": 4, "UX/UI": 1, "성능": 0, "모범사례": 1, "AEO/GEO": 0 }
-- priorityCriteria: 우선순위를 매긴 기준을 2~3문장으로 설명 (예: "요구사항과 직접 관련된 항목을 high로, 영향도가 큰 접근성·성능 이슈를 우선으로 함")
-- requirementAlignment: 사용자가 적은 요구사항과 제시된 개선사항이 얼마나 일치하는지 2~3문장으로 검증 요약 (예: "요구사항 '접근성 개선'과 대부분의 개선안이 일치하며, axe-core 위반 해결이 핵심으로 반영됨")
+- byCategory: 항목별 개선사항 개수
+- priorityCriteria: "요구사항에 맞는 항목을 우선 추천하고, 그 외 기본 분석 항목도 모두 포함함"을 반영한 2~3문장
+- requirementAlignment: 요구사항 부합 항목 수와 기본 분석 포함 항목 수를 언급하는 2~3문장
 
 응답은 반드시 아래 JSON 형식만 출력하세요. 다른 설명 없이 JSON만 출력합니다.
 
@@ -196,7 +252,8 @@ ${metaLines}
       "description": "구체적인 수정 방법",
       "codeExample": "개선된 코드 예시",
       "source": "Lighthouse · 카테고리 또는 axe-core · 규칙ID",
-      "requirementRelevance": "요구사항과의 일치 설명 (한 문장)",
+      "matchesRequirement": true 또는 false,
+      "requirementRelevance": "요구사항과의 일치 또는 기본 개선 설명 (한 문장)",
       "priorityReason": "이 우선순위를 부여한 이유 (한 문장)"
     }
   ],
@@ -205,8 +262,8 @@ ${metaLines}
     "highPriority": 숫자,
     "byCategory": { "SEO": 숫자, "접근성": 숫자, "UX/UI": 숫자, "성능": 숫자, "모범사례": 숫자, "AEO/GEO": 숫자 },
     "estimatedImpact": "한 줄 요약",
-    "priorityCriteria": "우선순위를 매긴 기준 (2~3문장)",
-    "requirementAlignment": "요구사항과 개선안의 일치 여부 검증 (2~3문장)"
+    "priorityCriteria": "우선순위 기준 (2~3문장)",
+    "requirementAlignment": "요구사항 부합·기본 분석 포함 설명 (2~3문장)"
   }
 }`
 
@@ -218,16 +275,23 @@ ${metaLines}
       const raw = jsonMatch ? jsonMatch[0] : response
       const parsed = JSON.parse(raw)
 
-      // source, category, requirementRelevance, priorityReason 보정
+      // source, category, matchesRequirement, requirementRelevance, priorityReason 보정 후 요구사항 부합 우선 정렬
       if (Array.isArray(parsed.improvements)) {
         parsed.improvements = parsed.improvements.map((i: any) => ({
           ...i,
           source: i.source || '분석 결과',
           codeExample: i.codeExample ?? '',
           category: normalizeCategory(i.category, i.source),
+          matchesRequirement: Boolean(i.matchesRequirement),
           requirementRelevance: i.requirementRelevance ?? '',
           priorityReason: i.priorityReason ?? '',
         }))
+        // 요구사항 부합 항목을 목록 앞에 오도록 정렬 (이미 AI가 순서 넣었을 수 있음)
+        const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
+        parsed.improvements.sort((a: any, b: any) => {
+          if (a.matchesRequirement !== b.matchesRequirement) return a.matchesRequirement ? -1 : 1
+          return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+        })
       }
       if (!parsed.summary) {
         parsed.summary = {}
@@ -245,7 +309,7 @@ ${metaLines}
         summary.byCategory = byCat
       }
       summary.priorityCriteria = summary.priorityCriteria ?? '우선순위는 요구사항 연관도와 영향도를 기준으로 부여되었습니다.'
-      summary.requirementAlignment = summary.requirementAlignment ?? '제시된 개선안은 입력하신 요구사항을 반영해 선별되었습니다.'
+      summary.requirementAlignment = summary.requirementAlignment ?? '요구사항에 맞는 항목을 우선 추천하고, 기본 분석 항목도 모두 포함했습니다.'
       if (analysisResults.aiseo) {
         const catObj = analysisResults.aiseo.categories || {}
         const categoriesArray = Object.entries(catObj).map(([key, c]: [string, any]) => ({
@@ -281,6 +345,7 @@ ${metaLines}
             codeExample: '',
             source: '분석 결과',
             category: 'UX/UI',
+            matchesRequirement: false,
             requirementRelevance: '',
             priorityReason: '',
           },

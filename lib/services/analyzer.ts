@@ -4,6 +4,9 @@ import * as cheerio from 'cheerio'
 import { runAxe } from '@/lib/utils/axe-runner'
 import { existsSync } from 'node:fs'
 
+/** 페이지 본문에서 읽기용 텍스트 추출 시 최대 문자 수 (토큰/API 제한 고려) */
+const MAX_PAGE_TEXT_LENGTH = 12000
+
 export interface AnalysisResults {
   lighthouse: any
   axe: any
@@ -15,6 +18,8 @@ export interface AnalysisResults {
     description?: string
     headings?: string[]
   }
+  /** 페이지 본문 요약·타겟층 분석용 텍스트 (script/style 제거, 길이 제한) */
+  pageText?: string
 }
 
 function resolveChromeExecutablePath(): string | undefined {
@@ -135,8 +140,19 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       runAxe(page)
     ])
 
-    console.log('Extracting metadata...')
+    console.log('Extracting metadata and page text...')
     const $ = cheerio.load(html)
+
+    // 스크립트·스타일 제거 후 본문만 파싱
+    $('script, style, noscript, iframe, nav, footer').remove()
+    const mainContent = $('main, article, [role="main"]').first().length
+      ? $('main, article, [role="main"]').first()
+      : $('body')
+    let pageText = mainContent.text() || ''
+    pageText = pageText.replace(/\s+/g, ' ').trim()
+    if (pageText.length > MAX_PAGE_TEXT_LENGTH) {
+      pageText = pageText.slice(0, MAX_PAGE_TEXT_LENGTH) + '…'
+    }
 
     // 메타데이터 추출
     const metadata = {
@@ -154,6 +170,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       screenshot: `data:image/png;base64,${screenshot}`,
       dom: html,
       metadata,
+      pageText: pageText || undefined,
     }
   } catch (error) {
     // 정리 작업
