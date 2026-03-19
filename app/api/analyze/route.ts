@@ -68,11 +68,23 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Gemini API 키 확인
+    // 항목별 전담용 API 키 확인
     if (!process.env.GEMINI_API_KEY) {
       console.error('GEMINI_API_KEY is not set')
       return NextResponse.json(
         { error: 'GEMINI_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
+        { status: 500 }
+      )
+    }
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: 'ANTHROPIC_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
+        { status: 500 }
+      )
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { error: 'OPENAI_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
         { status: 500 }
       )
     }
@@ -130,7 +142,7 @@ export async function POST(request: NextRequest) {
         } catch (streamError: any) {
           console.error('Analysis error:', streamError)
           let errorMessage = streamError?.message || '분석 중 오류가 발생했습니다.'
-          if (errorMessage.includes('API_KEY')) errorMessage = 'Gemini API 키가 유효하지 않습니다. .env.local 파일을 확인해주세요.'
+          if (errorMessage.includes('API_KEY')) errorMessage = 'API 키가 설정되지 않았거나 유효하지 않습니다. .env.local에서 GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY를 확인해주세요.'
           else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) errorMessage = '분석 시간이 초과되었습니다. 더 작은 웹사이트로 시도해보세요.'
           else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) errorMessage = '웹사이트에 연결할 수 없습니다. URL을 확인해주세요.'
           send({ type: 'error', error: errorMessage })
@@ -157,7 +169,7 @@ export async function POST(request: NextRequest) {
       
       // 특정 에러 메시지 처리
       if (error.message.includes('API_KEY')) {
-        errorMessage = 'Gemini API 키가 유효하지 않습니다. .env.local 파일을 확인해주세요.'
+        errorMessage = 'API 키가 설정되지 않았거나 유효하지 않습니다. .env.local에서 GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY를 확인해주세요.'
       } else if (error.message.includes('timeout') || error.message.includes('TIMEOUT')) {
         errorMessage = '분석 시간이 초과되었습니다. 더 작은 웹사이트로 시도해보세요.'
       } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {

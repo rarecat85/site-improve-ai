@@ -65,6 +65,22 @@ export function buildLighthouseSummary(lhr: any): LighthouseSummaryItem[] {
  * Lighthouse 요약을 프롬프트용 문자열로 변환 (항목 수 제한으로 토큰 절약)
  */
 const MAX_LIGHTHOUSE_ITEMS = 28
+
+/** Lighthouse 항목을 카테고리별로 필터 (항목별 전담용) */
+export function filterLighthouseItemsByCategory(
+  items: LighthouseSummaryItem[],
+  category: 'SEO' | '접근성' | '성능' | '모범사례'
+): LighthouseSummaryItem[] {
+  const map: Record<string, string[]> = {
+    SEO: ['SEO'],
+    접근성: ['접근성'],
+    성능: ['성능'],
+    모범사례: ['모범 사례', '모범사례'],
+  }
+  const allowed = map[category] || []
+  return items.filter((i) => allowed.some((c) => i.category === c))
+}
+
 export function formatLighthouseSummaryForPrompt(items: LighthouseSummaryItem[]): string {
   if (items.length === 0) return 'Lighthouse: 개선 필요 항목 없음 (또는 데이터 없음)'
   const limited = items.slice(0, MAX_LIGHTHOUSE_ITEMS)
