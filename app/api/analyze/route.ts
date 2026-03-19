@@ -102,8 +102,19 @@ export async function POST(request: NextRequest) {
           send({ type: 'progress', value: 5 })
 
           const { runAiseoAudit } = await import('@/lib/services/run-aiseo-audit')
-          console.log('Step 1-4: Analyzing website...')
-          const analysisResults = await analyzeWebsite(url)
+          const { fetchCruxSummary } = await import('@/lib/services/crux')
+          console.log('Step 1-4: Analyzing website (CrUX는 병렬로 조회)...')
+
+          const analysisPromise = analyzeWebsite(url)
+          const cruxPromise = fetchCruxSummary(url).catch((e) => {
+            console.warn('CrUX failed:', e)
+            return null
+          })
+          const analysisResults = await analysisPromise
+          const cruxResult = await cruxPromise
+          if (cruxResult !== null) {
+            analysisResults.crux = cruxResult
+          }
           send({ type: 'progress', value: 45 })
 
           console.log('Running AEO/GEO audit...')

@@ -18,6 +18,25 @@ interface Improvement {
   matchesRequirement?: boolean
 }
 
+interface DashboardCard {
+  id: string
+  label: string
+  grade: string
+  status: string
+  score100?: number
+}
+
+interface PageStats {
+  ctaCandidateCount: number
+  ctaExternalLinkCount: number
+  anchorCount: number
+  externalLinkCount: number
+  imageCount: number
+  imagesLazyHintCount: number
+  imageResourceCount: number
+  imageBytesReported: number
+}
+
 interface ReportData {
   improvements: Improvement[]
   summary: {
@@ -27,6 +46,26 @@ interface ReportData {
     byCategory?: Record<string, number>
     priorityCriteria?: string
     requirementAlignment?: string
+  }
+  /** Lighthouse·axe·aiseo 기반 규칙 등급 카드 */
+  dashboard?: {
+    overallScore100: number
+    cards: DashboardCard[]
+  }
+  pageStats?: PageStats
+  crux?: {
+    records: Array<{
+      formFactor: string
+      urlLevel: boolean
+      metrics: Record<string, { value?: number; unit?: string }>
+    }>
+    note?: string
+  }
+  responseMeta?: {
+    finalUrl?: string
+    httpStatus?: number
+    securityHeadersPresent?: string[]
+    securityHeadersMissing?: string[]
   }
   /** 페이지 전체 내용 요약 (URL 본문 기반 AI 분석) */
   contentSummary?: string
@@ -40,6 +79,52 @@ interface ReportData {
     categories?: Array<{ name?: string; id?: string; score?: number }>
     recommendations?: string[]
   }
+}
+
+function formatKb(bytes: number): string {
+  if (!bytes || bytes <= 0) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  return `${(bytes / 1024).toFixed(1)} KB`
+}
+
+function cruxMetricLabel(id: string): string {
+  const m: Record<string, string> = {
+    largest_contentful_paint: 'LCP',
+    first_contentful_paint: 'FCP',
+    interaction_to_next_paint: 'INP',
+    cumulative_layout_shift: 'CLS',
+  }
+  return m[id] || id
+}
+
+function formatCruxMetricLine(id: string, v: { value?: number; unit?: string }): string {
+  if (v.value == null) return ''
+  if (id === 'cumulative_layout_shift') {
+    const c = v.value
+    const disp = c > 1 ? (c / 100).toFixed(3) : Number(c).toFixed(3)
+    return `${cruxMetricLabel(id)} p75 ${disp}`
+  }
+  return `${cruxMetricLabel(id)} p75 ${Math.round(v.value)}ms`
+}
+
+function legacyScoreCards(data: ReportData): DashboardCard[] {
+  return [
+    { id: 'overall', label: 'OVERALL GRADE', grade: '—', status: '이전 리포트' },
+    { id: 'seo', label: 'SEO 최적화', grade: '—', status: '재분석 권장' },
+    { id: 'performance', label: '성능/로딩', grade: '—', status: '재분석 권장' },
+    { id: 'accessibility', label: '접근성', grade: '—', status: '재분석 권장' },
+    { id: 'security', label: '보안', grade: '—', status: '재분석 권장' },
+    { id: 'pwa', label: 'PWA 지원', grade: '—', status: '재분석 권장' },
+    { id: 'mobile', label: '모바일 대응', grade: '—', status: '재분석 권장' },
+    { id: 'image', label: '이미지 최적화', grade: '—', status: '재분석 권장' },
+    { id: 'script', label: '스크립트 리소스', grade: '—', status: '재분석 권장' },
+    {
+      id: 'aeo',
+      label: 'AEO/GEO',
+      grade: data.aiseo?.grade?.trim() || '—',
+      status: data.aiseo?.overallScore != null ? `점수 ${data.aiseo.overallScore}` : '재분석 권장',
+    },
+  ]
 }
 
 const CATEGORY_ORDER = ['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO'] as const
@@ -113,6 +198,49 @@ const MOCK_REPORT_PREVIEW: ReportData = {
       'FAQ 스키마를 도입해 AI 검색 답변에 노출되도록 하세요.',
       '핵심 키워드를 H2/H3에 포함해 주제를 명확히 하세요.',
     ],
+  },
+  dashboard: {
+    overallScore100: 84,
+    cards: [
+      { id: 'overall', label: 'OVERALL GRADE', grade: 'B+', status: '양호', score100: 84 },
+      { id: 'seo', label: 'SEO 최적화', grade: 'A-', status: '양호', score100: 90 },
+      { id: 'performance', label: '성능/로딩', grade: 'B', status: '개선 권장', score100: 82 },
+      { id: 'accessibility', label: '접근성', grade: 'A', status: '양호', score100: 91 },
+      { id: 'security', label: '보안', grade: 'B-', status: '개선 권장', score100: 78 },
+      { id: 'pwa', label: 'PWA 지원', grade: 'C+', status: '개선 권장', score100: 68 },
+      { id: 'mobile', label: '모바일 대응', grade: 'A-', status: '양호', score100: 88 },
+      { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 필요', score100: 62 },
+      { id: 'script', label: '스크립트 리소스', grade: 'B', status: '개선 권장', score100: 83 },
+      { id: 'aeo', label: 'AEO/GEO', grade: 'B+', status: '양호', score100: 72 },
+    ],
+  },
+  pageStats: {
+    ctaCandidateCount: 14,
+    ctaExternalLinkCount: 3,
+    anchorCount: 28,
+    externalLinkCount: 7,
+    imageCount: 22,
+    imagesLazyHintCount: 8,
+    imageResourceCount: 18,
+    imageBytesReported: 512000,
+  },
+  crux: {
+    records: [
+      {
+        formFactor: 'PHONE',
+        urlLevel: false,
+        metrics: {
+          largest_contentful_paint: { value: 2650, unit: 'ms' },
+          cumulative_layout_shift: { value: 8, unit: 'unitless' },
+        },
+      },
+    ],
+    note: '미리보기용 예시 CrUX 데이터입니다.',
+  },
+  responseMeta: {
+    httpStatus: 200,
+    securityHeadersPresent: ['strict-transport-security', 'x-content-type-options'],
+    securityHeadersMissing: ['content-security-policy'],
   },
 }
 
@@ -216,19 +344,14 @@ export default function ReportPage() {
     return group?.items ?? []
   }
 
-  // 스크린샷 스타일: 점수 카드 10개 (OVERALL, SEO, 성능, 접근성, 보안, PWA, 모바일, 이미지, 스크립트, AEO/GEO)
-  const scoreCards = [
-    { id: 'overall', label: 'OVERALL GRADE', grade: 'A+', status: '우수' },
-    { id: 'seo', label: 'SEO 최적화', grade: 'A', status: '양호' },
-    { id: 'performance', label: '성능/로딩', grade: 'B+', status: '개선 권장' },
-    { id: 'accessibility', label: '접근성', grade: 'A', status: '양호' },
-    { id: 'security', label: '보안', grade: 'A++', status: '우수' },
-    { id: 'pwa', label: 'PWA 지원', grade: 'A', status: '양호' },
-    { id: 'mobile', label: '모바일 대응', grade: 'A+', status: '우수' },
-    { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 필요' },
-    { id: 'script', label: '스크립트 리소스', grade: 'B', status: '개선 권장' },
-    { id: 'aeo', label: 'AEO/GEO', grade: reportData.aiseo?.grade ?? 'A+', status: 'AI 검색 대응' },
-  ]
+  const scoreCards: DashboardCard[] =
+    reportData.dashboard?.cards && reportData.dashboard.cards.length > 0
+      ? reportData.dashboard.cards
+      : legacyScoreCards(reportData)
+
+  const ps = reportData.pageStats
+  const crux = reportData.crux
+  const rm = reportData.responseMeta
 
   return (
     <div className={styles.container}>
@@ -256,9 +379,80 @@ export default function ReportPage() {
             <span className={styles.scoreCardLabel}>{card.label}</span>
             <span className={styles.scoreCardGrade}>{card.grade ?? '—'}</span>
             <span className={styles.scoreCardStatus}>{card.status}</span>
+            {card.score100 != null && card.id !== 'overall' && (
+              <span className={styles.scoreCardSub}>환산 ~{card.score100}</span>
+            )}
+            {card.id === 'overall' && reportData.dashboard?.overallScore100 != null && (
+              <span className={styles.scoreCardSub}>종합 ~{reportData.dashboard.overallScore100}</span>
+            )}
           </div>
         ))}
       </section>
+
+      {(ps || (crux && (crux.records?.length || crux.note)) || rm) && (
+        <section className={styles.metricsSection} aria-label="정량 지표·실사용자 데이터">
+          <h2 className={styles.metricsTitle}>정량 지표 (무료 소스)</h2>
+          <div className={styles.metricsGrid}>
+            {ps && (
+              <div className={styles.metricsBlock}>
+                <h3 className={styles.metricsBlockTitle}>페이지 DOM 추정</h3>
+                <ul className={styles.metricsList}>
+                  <li>CTA 후보: {ps.ctaCandidateCount}개 (그중 외부 링크 {ps.ctaExternalLinkCount}개)</li>
+                  <li>링크: 전체 {ps.anchorCount}개, 외부 도메인 {ps.externalLinkCount}개</li>
+                  <li>
+                    이미지: <code className={styles.metricsCode}>img</code> {ps.imageCount}개 (lazy·data-src 힌트 {ps.imagesLazyHintCount}개)
+                  </li>
+                  <li>
+                    Performance API 기준 이미지성 리소스 {ps.imageResourceCount}개, 전송량 합 {formatKb(ps.imageBytesReported)}
+                  </li>
+                </ul>
+                <p className={styles.metricsHint}>
+                  스크롤 일부 반영 후 측정입니다. 탭/모달 내부는 구조에 따라 누락될 수 있습니다.
+                </p>
+              </div>
+            )}
+            {crux && (crux.records?.length > 0 || crux.note) && (
+              <div className={styles.metricsBlock}>
+                <h3 className={styles.metricsBlockTitle}>Chrome UX Report (실사용자·p75)</h3>
+                {crux.records?.length > 0 ? (
+                  <ul className={styles.metricsList}>
+                    {crux.records.map((r, idx) => (
+                      <li key={idx}>
+                        <strong className={styles.metricsStrong}>
+                          {r.formFactor === 'PHONE' ? '모바일' : r.formFactor === 'DESKTOP' ? '데스크톱' : r.formFactor}
+                        </strong>{' '}
+                        ({r.urlLevel ? 'URL' : 'origin'} 수준){' '}
+                        {Object.entries(r.metrics || {})
+                          .map(([id, val]) => formatCruxMetricLine(id, val))
+                          .filter(Boolean)
+                          .join(', ') || '메트릭 없음'}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.metricsHint}>{crux.note || 'CrUX 데이터 없음'}</p>
+                )}
+                {crux.records?.length > 0 && crux.note && <p className={styles.metricsHint}>{crux.note}</p>}
+              </div>
+            )}
+            {rm && (
+              <div className={styles.metricsBlock}>
+                <h3 className={styles.metricsBlockTitle}>응답·보안 헤더(문서)</h3>
+                <ul className={styles.metricsList}>
+                  {rm.httpStatus != null && <li>HTTP 상태: {rm.httpStatus}</li>}
+                  {rm.finalUrl && <li>최종 URL: {rm.finalUrl}</li>}
+                  {(rm.securityHeadersPresent?.length ?? 0) > 0 && (
+                    <li>감지된 헤더: {rm.securityHeadersPresent?.join(', ')}</li>
+                  )}
+                  {(rm.securityHeadersMissing?.length ?? 0) > 0 && (
+                    <li className={styles.metricsWarn}>미설정 권장: {rm.securityHeadersMissing?.join(', ')}</li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <nav className={styles.tabNav} role="tablist" aria-label="분석 결과 항목별 보기">
         {tabEntries.map(({ id, label, count }) => (

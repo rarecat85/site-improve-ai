@@ -3,6 +3,10 @@ import puppeteer from 'puppeteer'
 import * as cheerio from 'cheerio'
 import { runAxe } from '@/lib/utils/axe-runner'
 import { existsSync } from 'node:fs'
+import type { CruxSummary } from '@/lib/services/crux'
+import type { PageStatsSummary, ResponseMetaSummary } from '@/lib/utils/grade-calculator'
+import { extractResponseMeta } from '@/lib/utils/grade-calculator'
+import { collectPageStats, scrollPageForLazyContent } from '@/lib/utils/page-stats'
 
 /** 페이지 본문에서 읽기용 텍스트 추출 시 최대 문자 수 (토큰/API 제한 고려) */
 const MAX_PAGE_TEXT_LENGTH = 12000
@@ -20,6 +24,12 @@ export interface AnalysisResults {
   }
   /** 페이지 본문 요약·타겟층 분석용 텍스트 (script/style 제거, 길이 제한) */
   pageText?: string
+  /** CTA·링크·이미지 등 DOM/Performance API 추정 통계 */
+  pageStats?: PageStatsSummary
+  /** 문서 응답 메타(보안 헤더 등) */
+  responseMeta?: ResponseMetaSummary | null
+  /** 설정 시 병합 (CrUX API) */
+  crux?: CruxSummary | null
 }
 
 function resolveChromeExecutablePath(): string | undefined {
@@ -107,7 +117,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       const options = {
         logLevel: 'info' as const,
         output: 'json' as const,
-        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo', 'pwa'],
         port: debugPort, // Puppeteer가 할당한 디버깅 포트
       }
       
@@ -127,17 +137,23 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     }
     
     console.log('Navigating to page...')
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded', // networkidle2보다 빠름
-      timeout: 20000 // 타임아웃 단축
+    const gotoResponse = await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
     })
+    const responseMeta = extractResponseMeta(gotoResponse)
+
+    await scrollPageForLazyContent(page)
+
+    console.log('Collecting DOM/performance stats...')
+    const pageStats = await collectPageStats(page)
 
     // 병렬로 실행하여 속도 개선
     console.log('Running parallel analysis...')
     const [screenshot, html, axeResults] = await Promise.all([
       page.screenshot({ encoding: 'base64' }),
       page.content(),
-      runAxe(page)
+      runAxe(page),
     ])
 
     console.log('Extracting metadata and page text...')
@@ -171,6 +187,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       dom: html,
       metadata,
       pageText: pageText || undefined,
+      pageStats,
+      responseMeta,
     }
   } catch (error) {
     // 정리 작업

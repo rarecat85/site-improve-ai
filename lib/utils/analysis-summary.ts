@@ -34,6 +34,7 @@ export function buildLighthouseSummary(lhr: any): LighthouseSummaryItem[] {
     accessibility: '접근성',
     'best-practices': '모범 사례',
     seo: 'SEO',
+    pwa: 'PWA',
   }
 
   for (const [catId, category] of Object.entries(lhr.categories) as [string, any][]) {

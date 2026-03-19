@@ -7,22 +7,12 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
+import type { AnalysisResults } from '@/lib/services/analyzer'
+import { computeDashboardGrades } from '@/lib/utils/grade-calculator'
+import { formatCruxForPrompt } from '@/lib/services/crux'
+import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-
-interface AnalysisResults {
-  lighthouse: any
-  axe: any
-  aiseo?: any
-  screenshot?: string
-  dom?: string
-  metadata?: {
-    title?: string
-    description?: string
-    headings?: string[]
-  }
-  pageText?: string
-}
 
 export interface ContentInsights {
   contentSummary: string
@@ -410,10 +400,16 @@ export async function generateReport(
   analysisResults: AnalysisResults
 ): Promise<any> {
   const metadata = analysisResults.metadata || {}
+  const contextBlock = [
+    formatPageStatsForPrompt(analysisResults.pageStats),
+    formatCruxForPrompt(analysisResults.crux ?? null),
+  ].join('\n\n')
   const metaLines = [
     `페이지 제목: ${metadata.title ?? '없음'}`,
     `메타 설명: ${metadata.description ?? '없음'}`,
     `제목 구조(h1,h2,h3): ${(metadata.headings && metadata.headings.length) ? metadata.headings.join(' → ') : '없음'}`,
+    '',
+    contextBlock,
   ].join('\n')
 
   try {
@@ -457,6 +453,18 @@ export async function generateReport(
     }
 
     const parsed: any = { improvements: allImprovements, summary }
+
+    const { cards, overallScore100 } = computeDashboardGrades({
+      lighthouse: analysisResults.lighthouse,
+      axe: analysisResults.axe,
+      aiseo: analysisResults.aiseo,
+      pageStats: analysisResults.pageStats,
+      responseMeta: analysisResults.responseMeta,
+    })
+    parsed.dashboard = { cards, overallScore100 }
+    if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats
+    if (analysisResults.crux != null) parsed.crux = analysisResults.crux
+    if (analysisResults.responseMeta) parsed.responseMeta = analysisResults.responseMeta
 
     if (analysisResults.aiseo) {
       const catObj = analysisResults.aiseo.categories || {}
