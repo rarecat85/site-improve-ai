@@ -11,7 +11,15 @@ import {
   MANDATORY_PRE_NAV_LOADING_MESSAGE,
   MANDATORY_PRE_NAV_MESSAGE_INDEX,
 } from '@/lib/analysis-loading-messages'
-import { saveReportPayloadToIdb } from '@/lib/storage/site-improve-report-idb'
+import { AppModal } from '@/app/components/ui/AppModal'
+import uiModalStyles from '@/app/components/ui/app-modal.module.css'
+import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
+import {
+  listSnapshotMetasMatchingUrl,
+  loadReportPayloadFromIdbBySnapshotId,
+  saveReportPayloadToIdb,
+  type ReportSnapshotListItem,
+} from '@/lib/storage/site-improve-report-idb'
 import styles from './page.module.css'
 
 const FOCUS_OPTIONS: { id: string; label: string }[] = [
@@ -56,7 +64,15 @@ export default function Home() {
   const [loadingSubtextOverride, setLoadingSubtextOverride] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
   const [analysisError, setAnalysisError] = useState<{ message: string; statusCode: number } | null>(null)
+  const [savedUrlModal, setSavedUrlModal] = useState<{
+    trimmedUrl: string
+    matches: ReportSnapshotListItem[]
+  } | null>(null)
+  const [savedUrlModalBusy, setSavedUrlModalBusy] = useState(false)
+  const [savedUrlModalError, setSavedUrlModalError] = useState<string | null>(null)
+  const [emptyUrlModalOpen, setEmptyUrlModalOpen] = useState(false)
   const messageTickRef = useRef(0)
+  const urlInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     messageTickRef.current = messageTick
@@ -83,14 +99,7 @@ export default function Home() {
     })
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (mode === 'comparison') return
-    if (!url.trim()) {
-      alert('분석할 URL을 입력해주세요.')
-      return
-    }
-
+  const runAnalysis = async (trimmedUrl: string) => {
     setLoading(true)
     setResult(null)
     setAnalysisError(null)
@@ -100,7 +109,7 @@ export default function Home() {
     const persistAndNavigateToReport = async (report: { improvements: unknown }) => {
       const payload = {
         report,
-        url: url.trim(),
+        url: trimmedUrl,
         requirement: buildReportRequirementLine(priorities),
         priorities,
       }
@@ -129,12 +138,18 @@ export default function Home() {
         await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
         setLoadingSubtextOverride(null)
       }
+      try {
+        const meta: ReportOpenMeta = { source: 'analyze' }
+        sessionStorage.setItem(REPORT_OPEN_META_SESSION_KEY, JSON.stringify(meta))
+      } catch {
+        /* ignore */
+      }
       router.push('/report')
       return true
     }
 
     try {
-      const body = { url: url.trim(), priorities }
+      const body = { url: trimmedUrl, priorities }
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,6 +226,72 @@ export default function Home() {
     }
   }
 
+  const closeSavedUrlModal = () => {
+    if (savedUrlModalBusy) return
+    setSavedUrlModal(null)
+    setSavedUrlModalError(null)
+  }
+
+  const closeEmptyUrlModal = () => {
+    setEmptyUrlModalOpen(false)
+    window.setTimeout(() => urlInputRef.current?.focus(), 0)
+  }
+
+  const openSavedResult = async () => {
+    if (!savedUrlModal) return
+    setSavedUrlModalError(null)
+    setSavedUrlModalBusy(true)
+    try {
+      const id = savedUrlModal.matches[0].id
+      const payload = await loadReportPayloadFromIdbBySnapshotId(id)
+      if (!payload || typeof payload !== 'object' || !payload.report) {
+        setSavedUrlModalError('저장된 결과를 불러오지 못했습니다.')
+        return
+      }
+      try {
+        localStorage.setItem('site-improve-report', JSON.stringify(payload))
+      } catch {
+        setSavedUrlModalError('브라우저 저장소에 기록할 수 없습니다.')
+        return
+      }
+      try {
+        const meta: ReportOpenMeta = { source: 'restore', snapshotId: id }
+        sessionStorage.setItem(REPORT_OPEN_META_SESSION_KEY, JSON.stringify(meta))
+      } catch {
+        /* ignore */
+      }
+      setSavedUrlModal(null)
+      router.push('/report')
+    } catch {
+      setSavedUrlModalError('저장된 결과를 불러오지 못했습니다.')
+    } finally {
+      setSavedUrlModalBusy(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (mode === 'comparison') return
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl) {
+      setEmptyUrlModalOpen(true)
+      return
+    }
+
+    try {
+      const matches = await listSnapshotMetasMatchingUrl(trimmedUrl)
+      if (matches.length > 0) {
+        setSavedUrlModalError(null)
+        setSavedUrlModal({ trimmedUrl, matches })
+        return
+      }
+    } catch {
+      /* 저장소 오류 시 분석은 진행 */
+    }
+
+    await runAnalysis(trimmedUrl)
+  }
+
   if (loading) {
     return (
       <AnalysisLoadingView
@@ -231,6 +312,7 @@ export default function Home() {
   }
 
   return (
+    <>
     <main className={styles.main}>
       <div className={styles.container}>
         <header className={styles.hero}>
@@ -301,6 +383,7 @@ export default function Home() {
               </p>
             )}
             <input
+              ref={urlInputRef}
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
@@ -391,5 +474,70 @@ export default function Home() {
         </footer>
       </div>
     </main>
+    <AppModal
+      open={savedUrlModal !== null}
+      title="저장된 분석이 있습니다"
+      onClose={closeSavedUrlModal}
+      leadingClose
+      description={
+        savedUrlModal ? (
+          <>
+            <p>
+              같은 URL로 저장된 분석이 이미 있습니다. 저장된 결과를 바로 열거나, 새로 분석해{' '}
+              <strong>별도의 저장 항목</strong>으로 추가할 수 있습니다. 메뉴의 저장 목록에서 항목마다 따로
+              열거나 삭제할 수 있습니다.
+            </p>
+            <p className={uiModalStyles.meta}>
+              이 URL 저장 항목 {savedUrlModal.matches.length}건 · 「저장된 결과 보기」는 가장 최근 항목을
+              엽니다.
+            </p>
+            {savedUrlModalError ? (
+              <p
+                className={uiModalStyles.meta}
+                style={{ color: 'var(--app-alert)', marginTop: '0.75rem' }}
+              >
+                {savedUrlModalError}
+              </p>
+            ) : null}
+          </>
+        ) : null
+      }
+      actions={[
+        {
+          label: '새로 분석하기',
+          variant: 'secondary',
+          disabled: savedUrlModalBusy,
+          onClick: () => {
+            const u = savedUrlModal?.trimmedUrl
+            if (!u) return
+            setSavedUrlModal(null)
+            setSavedUrlModalError(null)
+            void runAnalysis(u)
+          },
+        },
+        {
+          label: '저장된 결과 보기',
+          variant: 'primary',
+          disabled: savedUrlModalBusy,
+          autoFocus: true,
+          onClick: () => void openSavedResult(),
+        },
+      ]}
+    />
+    <AppModal
+      open={emptyUrlModalOpen}
+      title="URL을 입력해 주세요"
+      onClose={closeEmptyUrlModal}
+      description={<p>분석할 페이지의 주소(URL)를 입력한 뒤 다시 시도해 주세요.</p>}
+      actions={[
+        {
+          label: '확인',
+          variant: 'primary',
+          autoFocus: true,
+          onClick: closeEmptyUrlModal,
+        },
+      ]}
+    />
+    </>
   )
 }

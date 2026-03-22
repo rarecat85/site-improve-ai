@@ -1,0 +1,311 @@
+/* 뷰포트 우측 고정(이너 열 기준이면 큰 화면에서 오른쪽 빈 칸·본문과 겹침 발생) */
+.menuButton {
+  position: fixed;
+  top: 1rem;
+  right: var(--app-safe-right);
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--app-text-primary);
+  cursor: pointer;
+  transition: color 0.2s;
+  font-family: 'Pretendard', sans-serif;
+}
+
+.menuButton:hover {
+  color: var(--app-point);
+}
+
+.menuButtonHidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.menuButton:focus-visible {
+  outline: 2px solid var(--app-point);
+  outline-offset: 2px;
+}
+
+.menuIcon {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 18px;
+}
+
+.menuIcon span {
+  display: block;
+  height: 1.5px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+/* 드로어 폭(본문 translate 와 패널 width 공통) — 자식·drawerAnchor 가 상속 */
+.chromeRoot {
+  --app-safe-right: max(1rem, env(safe-area-inset-right, 0px));
+  --app-drawer-shift: min(320px, calc(100vw - 2rem));
+  width: 100%;
+  min-width: 0;
+}
+
+/* 메뉴 열림: 본문 전체를 좌측으로 드로어만큼 이동(뷰포트 left 기준으로 일부는 화면 밖) */
+.contentShell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  transform: translateX(0);
+  transition: transform 0.22s ease-out;
+}
+
+.contentShellOpen {
+  transform: translateX(calc(-1 * var(--app-drawer-shift)));
+}
+
+.drawerLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+/*
+ * 우측 세로 패널: 뷰포트 전체 높이, 너비 고정.
+ */
+@keyframes drawerSlideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0.92;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.drawerAnchor {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: var(--app-safe-right);
+  left: auto;
+  z-index: 0;
+  width: var(--app-drawer-shift);
+  max-width: var(--app-drawer-shift);
+  height: 100vh;
+  max-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: auto;
+  animation: drawerSlideIn 0.22s ease-out;
+}
+
+.drawer {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  background: var(--app-bg);
+  border-left: 1px solid var(--app-border-strong);
+  border-right: none;
+  padding: 1rem 1rem 1.5rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  font-family: 'Pretendard', sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+}
+
+.drawerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+}
+
+.closeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin: -0.35rem -0.35rem 0 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.closeButton:hover {
+  color: var(--app-point);
+}
+
+.closeButton:focus-visible {
+  outline: 2px solid var(--app-point);
+  outline-offset: 2px;
+}
+
+.themeRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.themeLabel {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+}
+
+.themeToggle {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.themeOption {
+  flex: 1;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-raised);
+  border: none;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.themeOption + .themeOption {
+  border-left: 1px solid var(--app-border-strong);
+}
+
+.themeOption:hover {
+  color: var(--app-text-primary);
+}
+
+.themeOptionActive {
+  color: var(--app-point);
+  background: var(--app-bg);
+}
+
+.themeOption:focus-visible {
+  outline: 2px solid var(--app-point);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+.divider {
+  height: 1px;
+  background: var(--app-border-strong);
+  margin: 0.15rem 0;
+}
+
+.savedSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.savedHeading {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-secondary);
+}
+
+.savedHint {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+}
+
+.savedError {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--app-alert);
+}
+
+.savedEmpty {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--app-text-muted);
+}
+
+.savedList {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.savedItem {
+  width: 100%;
+  text-align: left;
+  padding: 0.65rem 0.75rem;
+  background: var(--app-surface-raised);
+  border: 1px solid var(--app-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.savedItem:hover {
+  border-color: var(--app-point);
+}
+
+.savedItem:focus-visible {
+  outline: 2px solid var(--app-point);
+  outline-offset: 2px;
+}
+
+.savedItemUrl {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--app-text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.savedItemMeta {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--app-text-muted);
+  line-height: 1.4;
+}

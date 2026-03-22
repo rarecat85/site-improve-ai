@@ -1,11 +1,14 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { AppModal } from '@/app/components/ui/AppModal'
+import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
 import {
+  deleteReportSnapshotById,
   loadReportPayloadFromIdb,
   saveReportPayloadToIdb,
-  type StoredReportPayload,
 } from '@/lib/storage/site-improve-report-idb'
 import styles from './report.module.css'
 
@@ -215,7 +218,23 @@ type ReportViewProps = {
   initialPreview?: boolean
 }
 
+function readReportOpenMeta(): ReportOpenMeta {
+  if (typeof window === 'undefined') return { source: 'analyze' }
+  try {
+    const raw = sessionStorage.getItem(REPORT_OPEN_META_SESSION_KEY)
+    if (raw) return JSON.parse(raw) as ReportOpenMeta
+  } catch {
+    /* ignore */
+  }
+  return { source: 'analyze' }
+}
+
 export default function ReportView({ initialPreview = false }: ReportViewProps) {
+  const router = useRouter()
+  const [openMeta, setOpenMeta] = useState<ReportOpenMeta>({ source: 'analyze' })
+  useLayoutEffect(() => {
+    setOpenMeta(readReportOpenMeta())
+  }, [])
   const [reportData, setReportData] = useState<ReportData | null>(() =>
     initialPreview ? MOCK_REPORT_PREVIEW : null
   )
@@ -226,6 +245,9 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   const [priorities, setPriorities] = useState<string[]>([])
   const [loadReady, setLoadReady] = useState(initialPreview)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'error'>('idle')
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [infoModalMessage, setInfoModalMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialPreview) return
@@ -302,6 +324,42 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
       cancelled = true
     }
   }, [initialPreview])
+
+  const requestDeleteConfirm = () => {
+    if (!reportData || isPreview) return
+    if (openMeta.source !== 'restore') return
+    const snapshotId = openMeta.snapshotId
+    if (!snapshotId) {
+      setInfoModalMessage('삭제할 저장 항목 정보를 찾을 수 없습니다. 메뉴에서 다시 열어 주세요.')
+      return
+    }
+    setDeleteConfirmOpen(true)
+  }
+
+  const performDeleteStored = async () => {
+    const snapshotId = openMeta.snapshotId
+    if (!snapshotId) return
+    setDeleteConfirmOpen(false)
+    setDeleteStatus('deleting')
+    try {
+      await deleteReportSnapshotById(snapshotId)
+      try {
+        localStorage.removeItem('site-improve-report')
+      } catch {
+        /* ignore */
+      }
+      try {
+        sessionStorage.removeItem(REPORT_OPEN_META_SESSION_KEY)
+      } catch {
+        /* ignore */
+      }
+      router.push('/')
+    } catch (e) {
+      console.error('Delete stored report failed:', e)
+      setDeleteStatus('error')
+      window.setTimeout(() => setDeleteStatus('idle'), 3200)
+    }
+  }
 
   const handleSaveResult = async () => {
     if (!reportData) return
@@ -406,6 +464,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     'SEO, SPEED, ACCESSIBILITY, SECURITY'
 
   return (
+    <>
     <div className={styles.container}>
       {isPreview && (
         <div className={styles.previewBanner} role="status" aria-label="미리보기 모드">
@@ -727,22 +786,40 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
       ))}
 
       <footer className={styles.reportFooter}>
-        <button
-          type="button"
-          className={`${styles.reportFooterBtn} ${styles.reportFooterBtnPrimary}`}
-          onClick={() => void handleSaveResult()}
-          disabled={saveStatus === 'saving'}
-          aria-busy={saveStatus === 'saving'}
-          aria-label="분석 결과를 브라우저에 저장"
-        >
-          {saveStatus === 'saving'
-            ? '저장 중…'
-            : saveStatus === 'saved'
-              ? '저장됨'
-              : saveStatus === 'error'
-                ? '저장 실패 — 다시 시도'
-                : '결과 저장'}
-        </button>
+        {!isPreview &&
+          (openMeta.source === 'restore' ? (
+            <button
+              type="button"
+              className={`${styles.reportFooterBtn} ${styles.reportFooterBtnDanger}`}
+              onClick={() => requestDeleteConfirm()}
+              disabled={deleteStatus === 'deleting'}
+              aria-busy={deleteStatus === 'deleting'}
+              aria-label="저장된 분석 데이터 삭제"
+            >
+              {deleteStatus === 'deleting'
+                ? '삭제 중…'
+                : deleteStatus === 'error'
+                  ? '삭제 실패 — 다시 시도'
+                  : '데이터 삭제'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`${styles.reportFooterBtn} ${styles.reportFooterBtnPrimary}`}
+              onClick={() => void handleSaveResult()}
+              disabled={saveStatus === 'saving'}
+              aria-busy={saveStatus === 'saving'}
+              aria-label="분석 결과를 브라우저에 저장"
+            >
+              {saveStatus === 'saving'
+                ? '저장 중…'
+                : saveStatus === 'saved'
+                  ? '저장됨'
+                  : saveStatus === 'error'
+                    ? '저장 실패 — 다시 시도'
+                    : '결과 저장'}
+            </button>
+          ))}
         <Link
           href="/"
           className={`${styles.reportFooterBtn} ${styles.reportFooterBtnSecondary}`}
@@ -751,9 +828,48 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
           첫 화면으로
         </Link>
         <p className={styles.reportFooterSaveHint}>
-          결과 저장은 이 브라우저의 IndexedDB에 보관됩니다. 다른 기기에서는 보이지 않습니다.
+          {isPreview
+            ? '미리보기 화면입니다. 실제 분석 결과가 아닙니다.'
+            : openMeta.source === 'restore'
+              ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
+              : '결과 저장은 이 브라우저의 IndexedDB에 보관됩니다. 저장할 때마다 별도 항목으로 쌓이며, 메뉴에서 항목별로 열거나 삭제할 수 있습니다. 다른 기기에서는 보이지 않습니다.'}
         </p>
       </footer>
     </div>
+    <AppModal
+      open={deleteConfirmOpen}
+      title="저장 항목 삭제"
+      onClose={() => setDeleteConfirmOpen(false)}
+      description={
+        <p>
+          선택한 저장 항목만 삭제됩니다. 같은 URL의 다른 저장 분석은 그대로 남습니다. 삭제 후에는 복구할 수
+          없습니다.
+        </p>
+      }
+      actions={[
+        { label: '취소', variant: 'ghost', onClick: () => setDeleteConfirmOpen(false) },
+        {
+          label: '삭제',
+          variant: 'danger',
+          onClick: () => void performDeleteStored(),
+          disabled: deleteStatus === 'deleting',
+        },
+      ]}
+    />
+    <AppModal
+      open={infoModalMessage !== null}
+      title="안내"
+      onClose={() => setInfoModalMessage(null)}
+      description={infoModalMessage ? <p>{infoModalMessage}</p> : null}
+      actions={[
+        {
+          label: '확인',
+          variant: 'primary',
+          autoFocus: true,
+          onClick: () => setInfoModalMessage(null),
+        },
+      ]}
+    />
+    </>
   )
 }

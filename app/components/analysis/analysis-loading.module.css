@@ -1,7 +1,7 @@
 .loadingScreen {
   position: fixed;
   inset: 0;
-  background: #0c110e;
+  background: var(--app-loading-screen);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -26,9 +26,9 @@
 .loadingSpinnerRing {
   position: absolute;
   inset: 0;
-  border: 2px solid #1e3d2e;
+  border: 2px solid var(--app-loading-track);
   border-radius: 50%;
-  border-top-color: #4ade80;
+  border-top-color: var(--app-point);
   animation: loadingSpin 0.9s linear infinite;
 }
 
@@ -39,7 +39,7 @@
   width: 6px;
   height: 6px;
   margin: -3px 0 0 -3px;
-  background: #4ade80;
+  background: var(--app-point);
   border-radius: 50%;
 }
 
@@ -53,7 +53,7 @@
   font-family: 'Pretendard', sans-serif;
   font-size: clamp(1.5rem, 4vw, 1.85rem);
   font-weight: 500;
-  color: #fff;
+  color: var(--app-text-primary);
   margin: 0 0 1.75rem;
 }
 
@@ -66,7 +66,7 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #4ade80;
+  color: var(--app-point);
 }
 
 .loadingProgressLabel {
@@ -81,7 +81,7 @@
 
 .loadingProgressBar {
   height: 10px;
-  background: #1e3d2e;
+  background: var(--app-loading-track);
   border-radius: 5px;
   overflow: hidden;
   margin-bottom: 2.25rem;
@@ -89,14 +89,14 @@
 
 .loadingProgressFill {
   height: 100%;
-  background: #4ade80;
+  background: var(--app-point);
   border-radius: 5px;
   transition: width 0.25s ease-out;
 }
 
 .loadingSubtext {
   font-size: clamp(1rem, 2.4vw, 1.125rem);
-  color: #c4cad1;
+  color: var(--app-text-secondary);
   font-weight: 400;
   margin: 0 0 0.25rem;
   line-height: 1.65;

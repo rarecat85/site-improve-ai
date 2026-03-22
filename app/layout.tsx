@@ -1,10 +1,14 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import './theme.css'
+import { AppChrome } from '@/app/components/shell/AppChrome'
 
 export const metadata: Metadata = {
   title: 'Site Improve AI',
   description: 'AI 기반 웹사이트 품질 분석·개선 도구. 정밀 분석으로 웹 프레젠스를 강화합니다.',
 }
+
+const themeInitScript = `(function(){try{var t=localStorage.getItem('site-improve-theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');else document.documentElement.setAttribute('data-theme','dark');}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`
 
 export default function RootLayout({
   children,
@@ -12,15 +16,18 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="ko">
+    <html lang="ko" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
           as="style"
         />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>
+        <AppChrome>{children}</AppChrome>
+      </body>
     </html>
   )
 }
