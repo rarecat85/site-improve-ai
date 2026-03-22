@@ -7,11 +7,10 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
-import {
-  filterArchitectureRowsByCellIds,
-  type ArchitectureSectionSnippet,
-  type PageArchitectureSectionSummary,
-  type WireframeRow,
+import type {
+  ArchitectureSectionSnippet,
+  PageArchitectureSectionSummary,
+  WireframeRow,
 } from '@/lib/utils/page-architecture'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
@@ -198,14 +197,14 @@ export interface SummarizedPageArchitecture {
 
 /**
  * HTML에서 추출한 섹션 스니펫을 바탕으로 오버뷰용 짧은 요약·지표 문구 생성.
- * AI가 헤더·GNB·푸터·검색바·쿠키 문구·부모 사이트 공통 레이아웃 등 **페이지 고유 컨텐츠가 아닌 블록**은 JSON에서 생략하도록 함(생략된 id는 와이어프레임에서도 제거).
+ * AI가 크롬·공통 레이아웃 등 **요약할 가치 없는 블록**은 JSON에서 생략. 와이어프레임(rows)은 그대로 둠.
  */
 export async function summarizePageArchitectureSections(
   snippets: ArchitectureSectionSnippet[],
   rows: WireframeRow[]
 ): Promise<SummarizedPageArchitecture> {
   if (!snippets.length) {
-    return { sections: [], rows: [] }
+    return { sections: [], rows }
   }
 
   const allowedIds = new Set(snippets.map((s) => s.id))
@@ -284,9 +283,8 @@ JSON만 출력 (마크다운 금지). **제외할 블록은 sections에 넣지 �
     }
 
     const sections = keptIds.map((id) => byId.get(id)!)
-    const filteredRows = filterArchitectureRowsByCellIds(rows, new Set(keptIds))
 
-    return { sections, rows: filteredRows }
+    return { sections, rows }
   } catch (e) {
     console.warn('summarizePageArchitectureSections failed:', e)
     return {

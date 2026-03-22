@@ -142,12 +142,12 @@ export async function POST(request: NextRequest) {
           const [reportResult, contentInsights, archSummarized] = await Promise.all([
             generateReport(requirement, analysisResults),
             analyzeContentInsights(analysisResults),
-            archExtract.sections.length > 0
+            archExtract.rows.length > 0 && archExtract.sections.length > 0
               ? summarizePageArchitectureSections(archExtract.sections, archExtract.rows)
-              : Promise.resolve({ sections: [], rows: [] }),
+              : Promise.resolve({ sections: [], rows: archExtract.rows }),
           ])
           const report = reportResult
-          if (archSummarized.rows.length > 0 && archSummarized.sections.length > 0) {
+          if (archSummarized.rows.length > 0) {
             report.pageArchitecture = {
               rows: archSummarized.rows,
               sections: archSummarized.sections,

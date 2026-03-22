@@ -39,9 +39,10 @@ export interface PageArchitectureReport {
 const MAX_TOP_BLOCKS = 10
 /** 단일 상위 블록을 펼칠 때 직계 자식 칸 최대 개수 */
 const MAX_CHILDREN_EXPAND = 5
-/** 와이어프레임·섹션 요약 셀 총 상한(AI 부담·UI 밀도) */
+/** 와이어프레임·셀 총 상한(UI 밀도) */
 const MAX_TOTAL_CELLS = 22
-const MIN_TEXT_LEN = 35
+/** 와이어프레임에 포함할 최소 텍스트(그 미만이면 미디어·제목·구조로 판단) */
+const MIN_WIRE_TEXT_LEN = 12
 const SNIPPET_LEN = 700
 
 /** 알려진 쿠키/CMP 루트(본문과 겹칠 가능성이 낮은 셀렉터) */
@@ -110,22 +111,32 @@ function removeKnownCookieCMPRoots($: cheerio.CheerioAPI) {
   $(COOKIE_CMP_ROOT_SELECTORS).remove()
 }
 
-/** AI가 제외한 블록 id에 맞춰 와이어프레임 행에서 칸만 제거(빈 행은 삭제). */
-export function filterArchitectureRowsByCellIds(
-  rows: WireframeRow[],
-  keepIds: Set<string>
-): WireframeRow[] {
-  const out: WireframeRow[] = []
-  for (const row of rows) {
-    const cells = row.cells.filter((c) => keepIds.has(c.id))
-    if (cells.length === 0) continue
-    out.push({ cells })
-  }
-  return out
+function hasWireframeMedia($: cheerio.CheerioAPI, el: Element): boolean {
+  return $(el).find('img, picture, video, figure, canvas, [role="img"]').length > 0
 }
 
-/** 상위 블록의 직계 자식 중, 스니펫으로 쓸 만한 요소 */
-function qualifyingBlockChildren($: cheerio.CheerioAPI, parent: Element): Element[] {
+/**
+ * 와이어프레임 후보(쿠키·사이드넷 제외): 짧은 카피·이미지/비디오·제목·2+ 직계 자식 래퍼 포함.
+ */
+function isWireframeBlockCandidate($: cheerio.CheerioAPI, el: Element): boolean {
+  if (isCookieConsentOrSideNavShell($, el)) return false
+  const $el = $(el)
+  const text = $el.text().replace(/\s+/g, ' ').trim()
+  if (text.length >= MIN_WIRE_TEXT_LEN) return true
+  if (hasWireframeMedia($, el)) return true
+  if ($el.find('h1,h2,h3,h4').length > 0) return true
+  const kids = $el
+    .children()
+    .toArray()
+    .filter((ch) => {
+      const t = ch.tagName?.toLowerCase()
+      return Boolean(t && t !== 'script' && t !== 'style')
+    })
+  return kids.length >= 2
+}
+
+/** 직계 자식 중 와이어프레임 칸으로 쓸 만한 요소 */
+function wireQualifyingBlockChildren($: cheerio.CheerioAPI, parent: Element): Element[] {
   return $(parent)
     .children()
     .toArray()
@@ -133,9 +144,18 @@ function qualifyingBlockChildren($: cheerio.CheerioAPI, parent: Element): Elemen
       const tag = el.tagName?.toLowerCase()
       if (!tag || tag === 'script' || tag === 'style') return false
       if (isCookieConsentOrSideNavShell($, el)) return false
-      const text = $(el).text().replace(/\s+/g, ' ').trim()
-      return text.length >= MIN_TEXT_LEN
+      return isWireframeBlockCandidate($, el)
     })
+}
+
+function defaultWireframeLabel($: cheerio.CheerioAPI, el: Element, rowIndex: number, i?: number): string {
+  const heading = $(el).find('h1,h2,h3,h4').first().text().trim()
+  const fromHeading = slugLabel(heading, 24)
+  if (fromHeading) return fromHeading
+  if (hasWireframeMedia($, el)) return 'MEDIA_BLOCK'
+  if (i !== undefined) return `F_${String(i + 1).padStart(2, '0')}`
+  if (rowIndex === 0) return 'HERO_ANCHOR'
+  return `SEC_${String(rowIndex + 1).padStart(2, '0')}`
 }
 
 function slugLabel(text: string, maxLen: number): string {
@@ -149,8 +169,10 @@ function slugLabel(text: string, maxLen: number): string {
 }
 
 /**
- * Puppeteer HTML에서 상위 블록 구조를 추출해 와이어프레임 행·섹션 스니펫을 만듭니다.
- * 직계 div 그리드(2~4) 외에, 단일 블록이면 **한 단계 직계 자식**(section/article/div 등)을 한 행으로 펼칩니다.
+ * Puppeteer HTML에서 상위 블록 구조를 추출합니다.
+ * 와이어프레임 칸과 sections 스니펫은 동일 후보(느슨한 기준)로 1:1 대응합니다.
+ * 쿠키/CMP 루트 제거·사이드 드로어 네비 껍데기 제외만 유지합니다.
+ * 직계 div 그리드(2~4) 또는 한 단계 직계 자식 펼침 규칙은 동일합니다.
  */
 export function extractPageArchitecture(html: string): ExtractedPageArchitecture {
   const rows: WireframeRow[] = []
@@ -175,11 +197,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     return true
   })
 
-  let candidates = rawChildren.filter((el) => {
-    if (isCookieConsentOrSideNavShell($, el)) return false
-    const text = $(el).text().replace(/\s+/g, ' ').trim()
-    return text.length >= MIN_TEXT_LEN
-  })
+  let candidates = rawChildren.filter((el) => isWireframeBlockCandidate($, el))
 
   // body/main 직계가 래퍼 div 하나뿐이면 한 단계 펼쳐 본문 섹션을 잡음
   if (candidates.length === 1) {
@@ -192,9 +210,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
         .filter((el) => {
           const t = el.tagName?.toLowerCase()
           if (!t || t === 'script' || t === 'style') return false
-          if (isCookieConsentOrSideNavShell($, el)) return false
-          const text = $(el).text().replace(/\s+/g, ' ').trim()
-          return text.length >= MIN_TEXT_LEN
+          return isWireframeBlockCandidate($, el)
         })
       if (inner.length >= 2) {
         candidates = inner
@@ -218,8 +234,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     childEls.forEach((c, i) => {
       const $c = $(c)
       const id = nextId()
-      const heading = $c.find('h1,h2,h3,h4').first().text().trim()
-      const label = slugLabel(heading, 22) || `F_${String(i + 1).padStart(2, '0')}`
+      const label = defaultWireframeLabel($, c, rowIndex, i).slice(0, 26)
       const textSnippet = $c.text().replace(/\s+/g, ' ').trim().slice(0, SNIPPET_LEN)
       cells.push({ id, label })
       sections.push({ id, label, textSnippet })
@@ -238,8 +253,8 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     // 직계 div가 2~4개이면 한 행에 여러 칸(피처 그리드)
     const childDivs = $el
       .children('div')
-      .filter((_, c) => $(c).text().replace(/\s+/g, ' ').trim().length >= MIN_TEXT_LEN)
       .toArray()
+      .filter((c) => isWireframeBlockCandidate($, c))
 
     const isGridRow = childDivs.length >= 2 && childDivs.length <= 4
 
@@ -252,7 +267,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     }
 
     // 그리드가 아니면: div 외 section/article 등 직계 자식 2개 이상이면 한 단계 펼쳐 한 행에 그림
-    const structuralKids = qualifyingBlockChildren($, el)
+    const structuralKids = wireQualifyingBlockChildren($, el)
     const maxTake = Math.min(structuralKids.length, MAX_CHILDREN_EXPAND, budget)
     if (structuralKids.length >= 2 && maxTake >= 2) {
       pushMultiCellRow(structuralKids.slice(0, maxTake))
@@ -262,13 +277,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     if (budget < 1) break
 
     const id = nextId()
-    const heading = $el.find('h1,h2,h3').first().text().trim()
-
-    let label = slugLabel(heading, 24)
-    if (!label) {
-      if (rowIndex === 0) label = 'HERO_ANCHOR'
-      else label = `SEC_${String(rowIndex + 1).padStart(2, '0')}`
-    }
+    const label = defaultWireframeLabel($, el, rowIndex)
 
     const textSnippet = $el.text().replace(/\s+/g, ' ').trim().slice(0, SNIPPET_LEN)
     rows.push({ cells: [{ id, label }] })

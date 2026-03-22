@@ -597,9 +597,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         </section>
       )}
 
-      {reportData.pageArchitecture &&
-        reportData.pageArchitecture.rows.length > 0 &&
-        reportData.pageArchitecture.sections.length > 0 && (
+      {reportData.pageArchitecture && reportData.pageArchitecture.rows.length > 0 && (
           <section className={styles.archOverview} aria-label="페이지 구조 시각화 및 섹션 요약">
             <div className={styles.archTwoCol}>
               <div className={styles.archCol}>
@@ -644,24 +642,31 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
               </div>
               <div className={styles.archCol}>
                 <h2 className={styles.archColTitle}>Section Summaries</h2>
-                <ul className={styles.archSummaryList}>
-                  {orderArchitectureSummaries(
-                    reportData.pageArchitecture.rows,
-                    reportData.pageArchitecture.sections
-                  ).map((sec) => (
-                    <li key={sec.id} className={styles.archSummaryCard}>
-                      <div className={styles.archSummaryCardHead}>
-                        <span className={styles.archSummaryTitle}>{sec.title}</span>
-                        <span className={styles.archSummaryMetric}>
-                          {sec.metricScore != null && Number.isFinite(sec.metricScore)
-                            ? `${sec.metricLabel}: ${sec.metricScore}/10`
-                            : sec.metricLabel}
-                        </span>
-                      </div>
-                      <p className={styles.archSummaryBody}>{sec.description}</p>
-                    </li>
-                  ))}
-                </ul>
+                {reportData.pageArchitecture.sections.length > 0 ? (
+                  <ul className={styles.archSummaryList}>
+                    {orderArchitectureSummaries(
+                      reportData.pageArchitecture.rows,
+                      reportData.pageArchitecture.sections
+                    ).map((sec) => (
+                      <li key={sec.id} className={styles.archSummaryCard}>
+                        <div className={styles.archSummaryCardHead}>
+                          <span className={styles.archSummaryTitle}>{sec.title}</span>
+                          <span className={styles.archSummaryMetric}>
+                            {sec.metricScore != null && Number.isFinite(sec.metricScore)
+                              ? `${sec.metricLabel}: ${sec.metricScore}/10`
+                              : sec.metricLabel}
+                          </span>
+                        </div>
+                        <p className={styles.archSummaryBody}>{sec.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className={styles.archSummaryEmpty}>
+                    AI가 공통 레이아웃·크롬으로 판단한 블록만 요약에서 뺀 경우입니다. 와이어프레임에는 해당 구역이 남아 있을 수
+                    있습니다.
+                  </p>
+                )}
               </div>
             </div>
           </section>

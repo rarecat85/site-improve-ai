@@ -1002,6 +1002,13 @@
   gap: 0.85rem;
 }
 
+.archSummaryEmpty {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--app-text-secondary);
+}
+
 .archSummaryCard {
   background: var(--app-surface-raised);
   border: 1px solid var(--app-border-panel);
