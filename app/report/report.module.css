@@ -948,6 +948,7 @@
 
 .archRow {
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .archCell {

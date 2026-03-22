@@ -139,16 +139,19 @@ export async function POST(request: NextRequest) {
             ? extractPageArchitecture(archSourceHtml)
             : { rows: [], sections: [] }
 
-          const [reportResult, contentInsights, archSections] = await Promise.all([
+          const [reportResult, contentInsights, archSummarized] = await Promise.all([
             generateReport(requirement, analysisResults),
             analyzeContentInsights(analysisResults),
             archExtract.sections.length > 0
-              ? summarizePageArchitectureSections(archExtract.sections)
-              : Promise.resolve([]),
+              ? summarizePageArchitectureSections(archExtract.sections, archExtract.rows)
+              : Promise.resolve({ sections: [], rows: [] }),
           ])
           const report = reportResult
-          if (archExtract.rows.length > 0 && archSections.length > 0) {
-            report.pageArchitecture = { rows: archExtract.rows, sections: archSections }
+          if (archSummarized.rows.length > 0 && archSummarized.sections.length > 0) {
+            report.pageArchitecture = {
+              rows: archSummarized.rows,
+              sections: archSummarized.sections,
+            }
           }
           if (contentInsights) {
             report.contentSummary = contentInsights.contentSummary

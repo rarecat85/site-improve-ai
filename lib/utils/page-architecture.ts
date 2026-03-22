@@ -37,6 +37,10 @@ export interface PageArchitectureReport {
 }
 
 const MAX_TOP_BLOCKS = 10
+/** 단일 상위 블록을 펼칠 때 직계 자식 칸 최대 개수 */
+const MAX_CHILDREN_EXPAND = 5
+/** 와이어프레임·섹션 요약 셀 총 상한(AI 부담·UI 밀도) */
+const MAX_TOTAL_CELLS = 22
 const MIN_TEXT_LEN = 35
 const SNIPPET_LEN = 700
 
@@ -71,7 +75,7 @@ const SIDE_NAV_SHELL_RE =
 
 /**
  * 와이어프레임·섹션 후보에서 뺄 것: (1) 쿠키/동의 UI (2) 사이드·드로어 네비 껍데기
- * — header/footer/aside/일반 dialog 등은 본문에서도 쓰이므로 여기서 제거하지 않음.
+ * — GNB·헤더 등은 AI 단계에서 본문 여부를 판별(프롬프트)하는 편이 정확도 대비 유지보수에 유리함.
  */
 function isCookieConsentOrSideNavShell($: cheerio.CheerioAPI, el: Element): boolean {
   const tag = el.tagName?.toLowerCase() || ''
@@ -106,6 +110,34 @@ function removeKnownCookieCMPRoots($: cheerio.CheerioAPI) {
   $(COOKIE_CMP_ROOT_SELECTORS).remove()
 }
 
+/** AI가 제외한 블록 id에 맞춰 와이어프레임 행에서 칸만 제거(빈 행은 삭제). */
+export function filterArchitectureRowsByCellIds(
+  rows: WireframeRow[],
+  keepIds: Set<string>
+): WireframeRow[] {
+  const out: WireframeRow[] = []
+  for (const row of rows) {
+    const cells = row.cells.filter((c) => keepIds.has(c.id))
+    if (cells.length === 0) continue
+    out.push({ cells })
+  }
+  return out
+}
+
+/** 상위 블록의 직계 자식 중, 스니펫으로 쓸 만한 요소 */
+function qualifyingBlockChildren($: cheerio.CheerioAPI, parent: Element): Element[] {
+  return $(parent)
+    .children()
+    .toArray()
+    .filter((el) => {
+      const tag = el.tagName?.toLowerCase()
+      if (!tag || tag === 'script' || tag === 'style') return false
+      if (isCookieConsentOrSideNavShell($, el)) return false
+      const text = $(el).text().replace(/\s+/g, ' ').trim()
+      return text.length >= MIN_TEXT_LEN
+    })
+}
+
 function slugLabel(text: string, maxLen: number): string {
   const t = text.replace(/\s+/g, ' ').trim().slice(0, maxLen)
   if (!t) return ''
@@ -117,7 +149,8 @@ function slugLabel(text: string, maxLen: number): string {
 }
 
 /**
- * Puppeteer로 가져온 HTML에서 상위 블록 구조만 추출해 와이어프레임 행·섹션 스니펫을 만듭니다.
+ * Puppeteer HTML에서 상위 블록 구조를 추출해 와이어프레임 행·섹션 스니펫을 만듭니다.
+ * 직계 div 그리드(2~4) 외에, 단일 블록이면 **한 단계 직계 자식**(section/article/div 등)을 한 행으로 펼칩니다.
  */
 export function extractPageArchitecture(html: string): ExtractedPageArchitecture {
   const rows: WireframeRow[] = []
@@ -178,9 +211,31 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
   }
 
   let rowIndex = 0
+  let totalCells = 0
+
+  const pushMultiCellRow = (childEls: Element[]) => {
+    const cells: WireframeCell[] = []
+    childEls.forEach((c, i) => {
+      const $c = $(c)
+      const id = nextId()
+      const heading = $c.find('h1,h2,h3,h4').first().text().trim()
+      const label = slugLabel(heading, 22) || `F_${String(i + 1).padStart(2, '0')}`
+      const textSnippet = $c.text().replace(/\s+/g, ' ').trim().slice(0, SNIPPET_LEN)
+      cells.push({ id, label })
+      sections.push({ id, label, textSnippet })
+    })
+    rows.push({ cells })
+    totalCells += childEls.length
+    rowIndex += 1
+  }
+
   for (const el of candidates) {
+    if (totalCells >= MAX_TOTAL_CELLS) break
+
     const $el = $(el)
-    // 직계 div가 2~4개이면 한 행에 여러 칸(피처 그리드)으로 그립니다. 자식마다 쿠키/사이드넷 필터는 적용하지 않습니다(본문 카드와 구분이 어려움).
+    const budget = MAX_TOTAL_CELLS - totalCells
+
+    // 직계 div가 2~4개이면 한 행에 여러 칸(피처 그리드)
     const childDivs = $el
       .children('div')
       .filter((_, c) => $(c).text().replace(/\s+/g, ' ').trim().length >= MIN_TEXT_LEN)
@@ -189,25 +244,25 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     const isGridRow = childDivs.length >= 2 && childDivs.length <= 4
 
     if (isGridRow) {
-      const cells: WireframeCell[] = []
-      childDivs.slice(0, 4).forEach((c, i) => {
-        const $c = $(c)
-        const id = nextId()
-        const heading = $c.find('h1,h2,h3,h4').first().text().trim()
-        const label =
-          slugLabel(heading, 22) || `F_${String(i + 1).padStart(2, '0')}`
-        const textSnippet = $c.text().replace(/\s+/g, ' ').trim().slice(0, SNIPPET_LEN)
-        cells.push({ id, label })
-        sections.push({ id, label, textSnippet })
-      })
-      rows.push({ cells })
-      rowIndex += 1
+      const take = Math.min(childDivs.length, 4, budget)
+      if (take >= 2) {
+        pushMultiCellRow(childDivs.slice(0, take))
+        continue
+      }
+    }
+
+    // 그리드가 아니면: div 외 section/article 등 직계 자식 2개 이상이면 한 단계 펼쳐 한 행에 그림
+    const structuralKids = qualifyingBlockChildren($, el)
+    const maxTake = Math.min(structuralKids.length, MAX_CHILDREN_EXPAND, budget)
+    if (structuralKids.length >= 2 && maxTake >= 2) {
+      pushMultiCellRow(structuralKids.slice(0, maxTake))
       continue
     }
 
+    if (budget < 1) break
+
     const id = nextId()
     const heading = $el.find('h1,h2,h3').first().text().trim()
-    const tag = el.tagName?.toLowerCase() || ''
 
     let label = slugLabel(heading, 24)
     if (!label) {
@@ -218,6 +273,7 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
     const textSnippet = $el.text().replace(/\s+/g, ' ').trim().slice(0, SNIPPET_LEN)
     rows.push({ cells: [{ id, label }] })
     sections.push({ id, label, textSnippet })
+    totalCells += 1
     rowIndex += 1
   }
 

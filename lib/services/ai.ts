@@ -7,9 +7,11 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
-import type {
-  ArchitectureSectionSnippet,
-  PageArchitectureSectionSummary,
+import {
+  filterArchitectureRowsByCellIds,
+  type ArchitectureSectionSnippet,
+  type PageArchitectureSectionSummary,
+  type WireframeRow,
 } from '@/lib/utils/page-architecture'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
@@ -189,13 +191,24 @@ function fallbackArchitectureSummaries(
   })
 }
 
+export interface SummarizedPageArchitecture {
+  sections: PageArchitectureSectionSummary[]
+  rows: WireframeRow[]
+}
+
 /**
- * HTML에서 추출한 섹션 스니펫을 바탕으로 오버뷰용 짧은 요약·지표 문구 생성
+ * HTML에서 추출한 섹션 스니펫을 바탕으로 오버뷰용 짧은 요약·지표 문구 생성.
+ * AI가 헤더·GNB·푸터·검색바·쿠키 문구·부모 사이트 공통 레이아웃 등 **페이지 고유 컨텐츠가 아닌 블록**은 JSON에서 생략하도록 함(생략된 id는 와이어프레임에서도 제거).
  */
 export async function summarizePageArchitectureSections(
-  snippets: ArchitectureSectionSnippet[]
-): Promise<PageArchitectureSectionSummary[]> {
-  if (!snippets.length) return []
+  snippets: ArchitectureSectionSnippet[],
+  rows: WireframeRow[]
+): Promise<SummarizedPageArchitecture> {
+  if (!snippets.length) {
+    return { sections: [], rows: [] }
+  }
+
+  const allowedIds = new Set(snippets.map((s) => s.id))
 
   const payload = snippets.map((s) => ({
     id: s.id,
@@ -203,23 +216,39 @@ export async function summarizePageArchitectureSections(
     excerpt: s.textSnippet.slice(0, 900),
   }))
 
-  const prompt = `다음 배열은 한 웹 페이지의 **위에서 아래 순서**로 잡힌 DOM 상위 블록 발췌입니다. (쿠키·동의 배너·일부 사이드/드로어 네비는 제외되었을 수 있음.)
+  const prompt = `다음 배열은 한 웹 페이지를 **위→아래 순서**로 잘라 낸 DOM 상위 블록 발췌입니다. 각 항목은 이 URL **한 페이지 안의 정보/마케팅/본문**으로 의미 있는지 판단해야 합니다.
 
-각 블록에 대해 **발췌에 실제로 나타난 텍스트·역할**만 설명하세요. 발췌에 없는 기능·브랜드·가격을 상상하지 마세요.
+**sections 배열에 넣지 말 것 (생략 = 분석·리포트에서 제외)** — 발췌만 보고 판단:
+- 사이트 전역 헤더·GNB·상단/측면 **메인 네비게이션**, 로고 줄만 있는 띠
+- **푸터**·사이트맵 링크 덩어리·저작권·법적 고지만 있는 블록
+- **검색창/검색 UI**만 있는 구역(본문 검색이 아니라 사이트 통합 검색)
+- 쿠키·개인정보 동의·CMP·배너성 **동의 문구**
+- 부모/그룹 사이트와 **페이지마다 반복되는 껍데기**로만 보이고, 이 URL의 고유 메시지·제품·기사 본문과 무관한 블록
+- 텍스트가 사실상 **의미 없는 반복**(placeholder, Lorem, 빈 카피만)
 
-규칙:
+**sections에 넣을 것**
+- 이 페이지만의 히어로·소개·기능·가격·본문·FAQ·CTA 등 **실질 컨텐츠**
+- 애매하면 **포함**(잘못 빼는 손해가 더 큼)
+
+각 포함 블록에 대해 **발췌에 실제로 나타난 텍스트·역할**만 설명하세요. 발췌에 없는 기능·브랜드·가격을 상상하지 마세요.
+
+필드:
 - title: 영어 대문자·짧은 클러스터 라벨 (예: HERO CLUSTER, FEATURES GRID). 3~5 단어.
 - metricLabel: 한 단어 한국어 평가축 (임팩트, 효율, 명확성, 신뢰도, 유틸리티, 전환 등).
-- metricScore: 1~10, 소수 첫째 자리까지. 같은 페이지 안에서 상대 비교(첫 블록이 시선을 잡는지, 본문 밀도, CTA 명확성 등). 텍스트가 거의 없거나 스켈레톤 수준이면 3~5대, 잘 채워졌으면 7~10대.
-- metricScore: 내용이 없어 판단 불가면 null.
-- description: 2~3문장, 한국어. UX·정보 구조 관점. 이웃 블록과의 역할 분담이 보이면 한 문장 안에서만 언급.
+- metricScore: 1~10, 소수 첫째 자리까지. **포함된 블록들만** 서로 상대 비교. 텍스트가 거의 없거나 스켈레톤 수준이면 3~5대, 잘 채워졌으면 7~10대. 판단 불가면 null.
+- description: 2~3문장, 한국어. UX·정보 구조 관점.
 
-입력:
+입력 id:
+${JSON.stringify(payload.map((p) => p.id))}
+
+입력 본문:
 ${JSON.stringify(payload)}
 
-JSON만 출력 (마크다운 금지):
+JSON만 출력 (마크다운 금지). **제외할 블록은 sections에 넣지 않음.**
+형식:
 {"sections":[{"id":"B_01","title":"...","metricLabel":"...","metricScore":8.5,"description":"..."}]}
-입력의 모든 id를 빠짐없이 동일 id로 포함할 것.`
+- id는 입력에 있던 것만 사용. 새 id 금지.
+- 최소 1개 이상 포함하는 것이 자연스러우면 포함. **모두 크롬뿐이면** sections는 빈 배열 [].`
 
   try {
     const response = await callGemini(prompt)
@@ -230,7 +259,7 @@ JSON만 출력 (마크다운 금지):
     const byId = new Map<string, PageArchitectureSectionSummary>()
     for (const row of list) {
       const id = typeof row.id === 'string' ? row.id : ''
-      if (!id) continue
+      if (!id || !allowedIds.has(id)) continue
       const title = typeof row.title === 'string' ? row.title.trim() : ''
       const metricLabel = typeof row.metricLabel === 'string' ? row.metricLabel.trim() : '평가'
       const description = typeof row.description === 'string' ? row.description.trim() : ''
@@ -240,14 +269,30 @@ JSON만 출력 (마크다운 금지):
         byId.set(id, { id, title, metricLabel, metricScore, description })
       }
     }
-    return snippets.map((s) => {
-      const ai = byId.get(s.id)
-      if (ai) return ai
-      return fallbackArchitectureSummaries([s])[0]!
-    })
+
+    const orderIds = snippets.map((s) => s.id)
+    const keptIds = orderIds.filter((id) => byId.has(id))
+
+    if (keptIds.length === 0) {
+      console.warn(
+        '[summarizePageArchitectureSections] AI excluded all blocks — falling back to full list'
+      )
+      return {
+        sections: fallbackArchitectureSummaries(snippets),
+        rows,
+      }
+    }
+
+    const sections = keptIds.map((id) => byId.get(id)!)
+    const filteredRows = filterArchitectureRowsByCellIds(rows, new Set(keptIds))
+
+    return { sections, rows: filteredRows }
   } catch (e) {
     console.warn('summarizePageArchitectureSections failed:', e)
-    return fallbackArchitectureSummaries(snippets)
+    return {
+      sections: fallbackArchitectureSummaries(snippets),
+      rows,
+    }
   }
 }
 
