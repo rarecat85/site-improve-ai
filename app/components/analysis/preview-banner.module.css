@@ -1,0 +1,14 @@
+.banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1001;
+  padding: 0.65rem 1rem;
+  background: #262626;
+  border-bottom: 1px solid #4ade80;
+  color: #4ade80;
+  font-size: 0.8125rem;
+  text-align: center;
+  line-height: 1.4;
+}

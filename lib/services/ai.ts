@@ -7,22 +7,14 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
+import type {
+  ArchitectureSectionSnippet,
+  PageArchitectureSectionSummary,
+} from '@/lib/utils/page-architecture'
+import type { AnalysisResults } from '@/lib/types/analysis-results'
+import { MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '')
-
-interface AnalysisResults {
-  lighthouse: any
-  axe: any
-  aiseo?: any
-  screenshot?: string
-  dom?: string
-  metadata?: {
-    title?: string
-    description?: string
-    headings?: string[]
-  }
-  pageText?: string
-}
 
 export interface ContentInsights {
   contentSummary: string
@@ -131,7 +123,7 @@ async function callOpenAI(prompt: string): Promise<string> {
 export async function analyzeContentInsights(analysisResults: AnalysisResults): Promise<ContentInsights | null> {
   const pageText = analysisResults.pageText?.trim()
   const meta = analysisResults.metadata || {}
-  if (!pageText || pageText.length < 50) return null
+  if (!pageText || pageText.length < MIN_PAGE_TEXT_FOR_INSIGHTS) return null
 
   const metaLines = [
     `제목: ${meta.title ?? '없음'}`,
@@ -139,20 +131,27 @@ export async function analyzeContentInsights(analysisResults: AnalysisResults): 
     `제목 구조: ${(meta.headings && meta.headings.length) ? meta.headings.join(' → ') : '없음'}`,
   ].join('\n')
 
-  const prompt = `다음은 웹 페이지에서 추출한 본문 텍스트와 메타데이터입니다.
+  const bodyExcerpt = pageText.slice(0, 10000)
+
+  const prompt = `당신은 웹 페이지 콘텐츠 분석가입니다. 아래 텍스트는 브라우저에서 추출한 본문입니다(스크립트·일부 UI는 제거되었을 수 있으며, 지연 로딩으로 일부만 있을 수 있음). 검색·GA 등 외부 데이터는 없습니다.
 
 ## 메타데이터
 ${metaLines}
 
-## 페이지 본문 (일부)
-${pageText.slice(0, 10000)}
+## 페이지 본문 (최대 약 1만 자)
+${bodyExcerpt}
 
-위 내용만을 근거로 다음 두 가지를 JSON으로만 답해주세요. 다른 설명은 붙이지 마세요.
+**규칙**
+- 위에 인용된 내용에만 근거할 것. 없는 서비스·수치·수상·고객사명을 지어내지 말 것.
+- 불확실하면 "~로 보인다", "추정"으로 표현할 것.
+- 출력은 자연스러운 한국어.
 
-1) contentSummary: 페이지 전체 내용을 3~5문장으로 요약 (주제, 제공 정보, CTA 등).
-2) targetAudience: 이 페이지의 주요 타겟층 분석 (연령·관심사·니즈, B2B/B2C 등)을 3~5문장으로.
+다음 두 필드만 JSON 한 개로 답하세요. 마크다운·코드펜스·주석 없이 JSON만.
 
-응답 형식 (JSON만 출력):
+1) contentSummary: 이 페이지가 무엇을 제공하는지, 핵심 메시지·정보 구조·CTA(있다면)를 3~5문장.
+2) targetAudience: 이 페이지에 맞는 주요 독자/고객(연령대·역할·니즈·B2B/B2C 등)을 3~5문장.
+
+응답 형식:
 {"contentSummary":"...","targetAudience":"..."}`
 
   try {
@@ -172,6 +171,86 @@ ${pageText.slice(0, 10000)}
   return null
 }
 
+function fallbackArchitectureSummaries(
+  snippets: ArchitectureSectionSnippet[]
+): PageArchitectureSectionSummary[] {
+  const axes = ['Impact', '명확성', '효율', '신뢰도', '유틸리티', '전환']
+  return snippets.map((s, i) => {
+    const preview = s.textSnippet.replace(/\s+/g, ' ').trim().slice(0, 220)
+    return {
+      id: s.id,
+      title: s.label.replace(/_/g, ' '),
+      metricLabel: axes[i % axes.length]!,
+      metricScore: undefined,
+      description: preview
+        ? `${preview}${s.textSnippet.length > 220 ? '…' : ''}`
+        : '이 구역의 텍스트가 짧거나 비어 있습니다.',
+    }
+  })
+}
+
+/**
+ * HTML에서 추출한 섹션 스니펫을 바탕으로 오버뷰용 짧은 요약·지표 문구 생성
+ */
+export async function summarizePageArchitectureSections(
+  snippets: ArchitectureSectionSnippet[]
+): Promise<PageArchitectureSectionSummary[]> {
+  if (!snippets.length) return []
+
+  const payload = snippets.map((s) => ({
+    id: s.id,
+    wireframeLabel: s.label,
+    excerpt: s.textSnippet.slice(0, 900),
+  }))
+
+  const prompt = `다음 배열은 한 웹 페이지의 **위에서 아래 순서**로 잡힌 DOM 상위 블록 발췌입니다. (쿠키·동의 배너·일부 사이드/드로어 네비는 제외되었을 수 있음.)
+
+각 블록에 대해 **발췌에 실제로 나타난 텍스트·역할**만 설명하세요. 발췌에 없는 기능·브랜드·가격을 상상하지 마세요.
+
+규칙:
+- title: 영어 대문자·짧은 클러스터 라벨 (예: HERO CLUSTER, FEATURES GRID). 3~5 단어.
+- metricLabel: 한 단어 한국어 평가축 (임팩트, 효율, 명확성, 신뢰도, 유틸리티, 전환 등).
+- metricScore: 1~10, 소수 첫째 자리까지. 같은 페이지 안에서 상대 비교(첫 블록이 시선을 잡는지, 본문 밀도, CTA 명확성 등). 텍스트가 거의 없거나 스켈레톤 수준이면 3~5대, 잘 채워졌으면 7~10대.
+- metricScore: 내용이 없어 판단 불가면 null.
+- description: 2~3문장, 한국어. UX·정보 구조 관점. 이웃 블록과의 역할 분담이 보이면 한 문장 안에서만 언급.
+
+입력:
+${JSON.stringify(payload)}
+
+JSON만 출력 (마크다운 금지):
+{"sections":[{"id":"B_01","title":"...","metricLabel":"...","metricScore":8.5,"description":"..."}]}
+입력의 모든 id를 빠짐없이 동일 id로 포함할 것.`
+
+  try {
+    const response = await callGemini(prompt)
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    const raw = jsonMatch ? jsonMatch[0] : response
+    const parsed = JSON.parse(raw) as { sections?: any[] }
+    const list = Array.isArray(parsed.sections) ? parsed.sections : []
+    const byId = new Map<string, PageArchitectureSectionSummary>()
+    for (const row of list) {
+      const id = typeof row.id === 'string' ? row.id : ''
+      if (!id) continue
+      const title = typeof row.title === 'string' ? row.title.trim() : ''
+      const metricLabel = typeof row.metricLabel === 'string' ? row.metricLabel.trim() : '평가'
+      const description = typeof row.description === 'string' ? row.description.trim() : ''
+      const n = Number(row.metricScore)
+      const metricScore = Number.isFinite(n) ? Math.min(10, Math.max(0, n)) : undefined
+      if (title && description) {
+        byId.set(id, { id, title, metricLabel, metricScore, description })
+      }
+    }
+    return snippets.map((s) => {
+      const ai = byId.get(s.id)
+      if (ai) return ai
+      return fallbackArchitectureSummaries([s])[0]!
+    })
+  } catch (e) {
+    console.warn('summarizePageArchitectureSections failed:', e)
+    return fallbackArchitectureSummaries(snippets)
+  }
+}
+
 /**
  * 분석된 사이트의 목적·타겟층을 기준으로 유사·경쟁 사이트 후보를 찾고,
  * 목적·타겟 일치도 + 기업 규모/유명도로 점수화해 상위 3개만 반환
@@ -181,21 +260,24 @@ export async function findSimilarSites(
   contentSummary: string,
   targetAudience: string
 ): Promise<SimilarSite[] | null> {
-  const prompt = `다음 웹사이트는 현재 분석 대상입니다.
+  const prompt = `분석 대상 사이트:
 - URL: ${pageUrl}
 - 페이지 요약: ${contentSummary}
 - 주요 타겟층: ${targetAudience}
 
-이 사이트와 **목적·타겟층이 비슷한 실제 유사 사이트 또는 경쟁사**를 생각해보세요.
-1) 목적·타겟 일치도가 높은 사이트일수록 좋고,
-2) 기업 규모·브랜드 인지도가 있는 사이트를 우선합니다.
+**목적·타겟이 비슷한 실제 경쟁사 또는 대체재**를 최대 3개 제시하세요.
 
-실제로 존재하는 사이트만 제시하고, 반드시 정확한 메인 URL(https 포함)을 적어주세요.
-한국·글로벌 모두 가능하며, 업종·규모에 맞는 잘 알려진 사이트 3개만 선정해주세요.
+**필수**
+- 분석 대상 URL과 **동일한 사이트**(같은 도메인·리다이렉트만 다른 경우)는 넣지 말 것.
+- 실제로 접속 가능한 **공식 https URL**만. 존재하지 않거나 확실하지 않은 도메인은 넣지 말 것.
+- 잘 알려진 브랜드·서비스 위주(한국·글로벌 무관). 확신이 없으면 3개 미만으로 줄여도 됨.
 
-응답은 반드시 아래 JSON 형식만 출력하세요. 다른 설명은 붙이지 마세요.
-{"sites":[{"url":"https://...","name":"사이트명","matchReason":"목적·타겟이 왜 비슷한지 한 문장","fameReason":"규모·유명도 관련 한 문장"}]}
-최대 3개만 포함하고, url/name/matchReason/fameReason은 모두 문자열로 주세요.`
+**금지**
+- 가상의 회사·URL 생성, 추측으로 만든 경로.
+
+JSON만 출력:
+{"sites":[{"url":"https://...","name":"사이트명","matchReason":"목적·타겟 유사 이유 한 문장","fameReason":"규모·인지도 한 문장"}]}
+url·name·matchReason·fameReason은 모두 문자열. 항목은 0~3개.`
 
   try {
     const response = await callGemini(prompt)
@@ -309,19 +391,35 @@ function buildCategoryPromptContent(
 
 function getCategoryJsonRules(category: string): string {
   return `
-**필수 규칙:**
-- category: 반드시 "${category}" 하나만 사용 (다른 카테고리 없음)
-- matchesRequirement: 요구사항과 직접 관련되면 true, 아니면 false
-- requirementRelevance: 한 문장
-- priority: high 또는 medium 또는 low
-- priorityReason: 한 문장
-- description: 구체적인 수정 방법
-- codeExample: 가능한 한 포함 (실무 복사용)
-- source: "Lighthouse · ..." 또는 "axe-core · 규칙ID" 또는 "aiseo-audit · ..."
+**필수 규칙**
+- category: 반드시 "${category}" 만 (다른 카테고리 금지)
+- title: **한국어**, 구체적이고 짧게 (예: "LCP 이미지 우선순위 지정"). 일반론 한 줄 제목 금지.
+- matchesRequirement: 사용자 요구사항 문구와 **직접** 연결되면 true, 그 외 false
+- requirementRelevance: 한 문장, 한국어 (왜 요구사항과 관련 있는지 또는 없는지)
+- priority: high | medium | low (사용자 영향·이슈 심각도 기준)
+- priorityReason: 한 문장, 한국어
+- impact: 높음 | 중간 | 낮음 — 사용자·비즈니스 관점
+- difficulty: 쉬움 | 보통 | 어려움 — 구현 난이도
+- description: 한국어, **실행 가능한** 수정 단계. 위 분석 데이터에 근거할 것.
+- codeExample: HTML/CSS/메타/헤더 예시 등 가능하면 문자열로. 없으면 빈 문자열 "". 마크다운 코드펜스(\`\`\`) 사용 금지.
+- source: 반드시 아래 중 하나에 맞출 것 — "Lighthouse · 감사제목 또는 ID", "axe-core · 규칙ID", "aiseo-audit · …". **위에 없는 감사를 지어내지 말 것.**
 
-응답은 반드시 아래 JSON 형식만 출력하세요. 다른 설명 없이 JSON만 출력합니다.
+**금지**
+- 제공된 Lighthouse/axe/aiseo 목록에 없는 이슈를 새로 만들어내기
+- 동일 원인의 중복 항목 — 필요하면 하나로 합쳐 설명에 병합
+
+응답: JSON만 (설명·마크다운 없음).
 {"improvements":[{"title":"...","category":"${category}","priority":"high|medium|low","impact":"높음|중간|낮음","difficulty":"쉬움|보통|어려움","description":"...","codeExample":"...","source":"...","matchesRequirement":true|false,"requirementRelevance":"...","priorityReason":"..."}]}
+데이터에 개선점이 거의 없으면 improvements는 빈 배열 [] 가능.
 `
+}
+
+const CATEGORY_FOCUS: Record<ReportCategory, string> = {
+  SEO: '크롤링·인덱싱, 메타·제목, 구조화 데이터, 링크·모바일 친화 스니펫. 키워드 나열이 아닌 **제공된 감사 항목** 기반.',
+  접근성: '키보드·스크린리더, 대비, 이름/라벨, 랜드마크. **axe·Lighthouse 접근성에 나온 항목**만.',
+  성능: 'LCP/CLS/TBT 등 **제공된 성능 감사**와 표시값. 일반적인 "속도 개선"만의 추상 항목 금지.',
+  모범사례: '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티 등 **제공된 모범사례 감사**.',
+  'AEO/GEO': '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명.',
 }
 
 /** 카테고리 1개에 대해 AI 호출 후 improvements 배열만 반환 */
@@ -332,14 +430,24 @@ async function generateReportForCategory(
   metaLines: string
 ): Promise<any[]> {
   const content = buildCategoryPromptContent(category, analysisResults, metaLines)
-  const prompt = `당신은 웹 품질 분석 전문가입니다. 아래 "실제 분석 결과"에 있는 **이 카테고리** 발견 항목만 보고, 구체적이고 실행 가능한 개선안을 제시해주세요.
-배경 설명은 쓰지 마세요. 오직 improvements 배열만 JSON으로 답하세요.
+  const focus = CATEGORY_FOCUS[category]
+  const prompt = `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용.
+
+## 이 카테고리 초점
+${focus}
 
 ## 사용자 요구사항
 ${requirement}
+요구사항에 명시된 관심 영역과 직접 맞닿은 항목에 matchesRequirement=true 를 우선 부여하세요.
 
-## 실제 분석 결과 (이 데이터만 참고)
+## 실제 분석 결과 (유일한 근거 — 아래에 없는 Lighthouse/axe 이슈는 만들지 말 것)
 ${content}
+
+지침:
+- 위 블록에 **나열된** 감사·위반만 개선안으로 옮기세요. 목록이 비어 있거나 "없음"이면 improvements는 [] 이거나, 데이터에 근거한 1건 이하만.
+- 항목 수는 품질 우선 (불필요한 중복·일반론 금지).
+- 배경 설명·서론 없이 JSON만.
+
 ${getCategoryJsonRules(category)}`
 
   let raw: string
@@ -457,6 +565,10 @@ export async function generateReport(
     }
 
     const parsed: any = { improvements: allImprovements, summary }
+
+    if (analysisResults.screenshot) {
+      parsed.screenshot = analysisResults.screenshot
+    }
 
     if (analysisResults.aiseo) {
       const catObj = analysisResults.aiseo.categories || {}

@@ -1,25 +1,43 @@
 // 동적 import로 webpack 번들링 문제 방지
-import puppeteer from 'puppeteer'
+import puppeteer, { type Page } from 'puppeteer'
 import * as cheerio from 'cheerio'
 import { runAxe } from '@/lib/utils/axe-runner'
+import { MIN_VIABLE_HTML_LENGTH, MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
+import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { existsSync } from 'node:fs'
+
+export type { AnalysisResults } from '@/lib/types/analysis-results'
 
 /** 페이지 본문에서 읽기용 텍스트 추출 시 최대 문자 수 (토큰/API 제한 고려) */
 const MAX_PAGE_TEXT_LENGTH = 12000
 
-export interface AnalysisResults {
-  lighthouse: any
-  axe: any
-  aiseo?: any
-  screenshot?: string
-  dom?: string
-  metadata?: {
-    title?: string
-    description?: string
-    headings?: string[]
+/** `load` 이벤트 대기 상한 (이미 complete면 즉시 통과) */
+const ARCH_WAIT_LOAD_MS = 10_000
+/** 네트워크 유휴 대기 — 타임아웃 시에도 분석은 계속 (1차 DOM 품질로 폴백 가능) */
+const ARCH_NETWORK_IDLE_MS = 14_000
+const ARCH_NETWORK_IDLE_CONCURRENCY = 2
+const ARCH_POST_IDLE_SETTLE_MS = 1_000
+
+function extractMetadataAndPageText(html: string): {
+  metadata: { title?: string; description?: string; headings?: string[] }
+  pageText: string
+} {
+  const $ = cheerio.load(html)
+  $('script, style, noscript, iframe, nav, footer').remove()
+  const mainContent = $('main, article, [role="main"]').first().length
+    ? $('main, article, [role="main"]').first()
+    : $('body')
+  let pageText = mainContent.text() || ''
+  pageText = pageText.replace(/\s+/g, ' ').trim()
+  if (pageText.length > MAX_PAGE_TEXT_LENGTH) {
+    pageText = pageText.slice(0, MAX_PAGE_TEXT_LENGTH) + '…'
   }
-  /** 페이지 본문 요약·타겟층 분석용 텍스트 (script/style 제거, 길이 제한) */
-  pageText?: string
+  const metadata = {
+    title: $('title').text() || undefined,
+    description: $('meta[name="description"]').attr('content') || undefined,
+    headings: $('h1, h2, h3').map((_, el) => $(el).text()).get(),
+  }
+  return { metadata, pageText }
 }
 
 function resolveChromeExecutablePath(): string | undefined {
@@ -39,6 +57,55 @@ function resolveChromeExecutablePath(): string | undefined {
   }
 
   return undefined
+}
+
+/**
+ * CSR·지연 로딩 반영을 위해 동일 탭에서 DOM을 한 번 더 안정화한 뒤 `page.content()`에 쓸 준비.
+ * 단계별 실패는 삼키고 가능한 만큼만 진행해 전체 분석 실패로 이어지지 않게 함.
+ */
+async function settlePageDomForArchitecture(page: Page): Promise<void> {
+  try {
+    await page
+      .waitForFunction(() => document.readyState === 'complete', {
+        timeout: ARCH_WAIT_LOAD_MS,
+      })
+      .catch(() => {
+        /* SPA가 complete에 머물지 않는 경우 등 — 무시 */
+      })
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    await page.waitForNetworkIdle({
+      idleTime: 500,
+      timeout: ARCH_NETWORK_IDLE_MS,
+      concurrency: ARCH_NETWORK_IDLE_CONCURRENCY,
+    })
+  } catch {
+    console.warn(
+      '[analyzer] waitForNetworkIdle timed out or failed — architecture DOM may miss late requests'
+    )
+  }
+
+  try {
+    await new Promise<void>((r) => setTimeout(r, ARCH_POST_IDLE_SETTLE_MS))
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve())
+          })
+        })
+    )
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
@@ -67,15 +134,15 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     // Puppeteer로 브라우저 실행 (Lighthouse와 공유)
     const executablePath = resolveChromeExecutablePath()
     try {
-      browser = await puppeteer.launch({ 
+      browser = await puppeteer.launch({
         headless: true,
         executablePath,
         args: [
-          '--no-sandbox', 
+          '--no-sandbox',
           '--disable-setuid-sandbox',
           // 고정 포트(예: 9222)는 다른 프로세스와 충돌해 launch 실패를 유발할 수 있어 자동 할당(0) 사용
-          '--remote-debugging-port=0'
-        ]
+          '--remote-debugging-port=0',
+        ],
       })
     } catch (launchError: any) {
       const hint = [
@@ -87,37 +154,36 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       const message = launchError instanceof Error ? launchError.message : String(launchError)
       throw new Error(`${hint}\n\n원본 에러: ${message}`)
     }
-    
+
     const page = await browser.newPage()
-    
+
     // Lighthouse 실행 (Puppeteer 브라우저 재사용)
     console.log('Running Lighthouse with Puppeteer browser...')
     try {
       const lighthouseModule = await import('lighthouse')
       const lighthouse = lighthouseModule.default || lighthouseModule
 
-      const wsEndpoint: string | undefined = typeof browser?.wsEndpoint === 'function'
-        ? browser.wsEndpoint()
-        : undefined
+      const wsEndpoint: string | undefined =
+        typeof browser?.wsEndpoint === 'function' ? browser.wsEndpoint() : undefined
       const debugPort = wsEndpoint ? Number(new URL(wsEndpoint).port) : NaN
       if (!Number.isFinite(debugPort)) {
         throw new Error(`Failed to determine Chrome debug port from wsEndpoint: ${wsEndpoint}`)
       }
-      
+
       const options = {
         logLevel: 'info' as const,
         output: 'json' as const,
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
         port: debugPort, // Puppeteer가 할당한 디버깅 포트
       }
-      
+
       lighthouseResult = await Promise.race([
         lighthouse(url, options),
-        new Promise((_, reject) => 
+        new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Lighthouse timeout')), 60000)
-        )
+        ),
       ]) as any
-      
+
       lighthouseResult = lighthouseResult?.lhr
       console.log('Lighthouse completed')
     } catch (lighthouseError: any) {
@@ -125,40 +191,63 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       // Lighthouse 실패해도 계속 진행 (Puppeteer 분석은 수행)
       console.warn('Lighthouse 분석을 건너뜁니다. Puppeteer 분석만 수행합니다.')
     }
-    
+
     console.log('Navigating to page...')
-    await page.goto(url, { 
+    await page.goto(url, {
       waitUntil: 'domcontentloaded', // networkidle2보다 빠름
-      timeout: 20000 // 타임아웃 단축
+      timeout: 20000, // 타임아웃 단축
     })
 
-    // 병렬로 실행하여 속도 개선
-    console.log('Running parallel analysis...')
-    const [screenshot, html, axeResults] = await Promise.all([
-      page.screenshot({ encoding: 'base64' }),
-      page.content(),
-      runAxe(page)
-    ])
+    console.log('Running parallel analysis (DOM + axe, 1차)...')
+    const [html, axeResults] = await Promise.all([page.content(), runAxe(page)])
 
-    console.log('Extracting metadata and page text...')
-    const $ = cheerio.load(html)
+    let { metadata, pageText } = extractMetadataAndPageText(html)
+    const firstPageTextLen = pageText.length
+    console.log(
+      `[analyzer] 1st snapshot: pageText ${firstPageTextLen} chars, dom ${html.length} bytes`
+    )
 
-    // 스크립트·스타일 제거 후 본문만 파싱
-    $('script, style, noscript, iframe, nav, footer').remove()
-    const mainContent = $('main, article, [role="main"]').first().length
-      ? $('main, article, [role="main"]').first()
-      : $('body')
-    let pageText = mainContent.text() || ''
-    pageText = pageText.replace(/\s+/g, ' ').trim()
-    if (pageText.length > MAX_PAGE_TEXT_LENGTH) {
-      pageText = pageText.slice(0, MAX_PAGE_TEXT_LENGTH) + '…'
-    }
+    /** 와이어프레임과 맞출 때: 정착 후 캡처. 폴백 시 1차와 동일 시점 캡처 사용 */
+    const screenshotEarly = await page.screenshot({ encoding: 'base64' })
 
-    // 메타데이터 추출
-    const metadata = {
-      title: $('title').text() || undefined,
-      description: $('meta[name="description"]').attr('content') || undefined,
-      headings: $('h1, h2, h3').map((_, el) => $(el).text()).get(),
+    let domForArchitecture: string | undefined
+    let screenshotFinalB64 = screenshotEarly
+
+    try {
+      console.log('Settling DOM for page architecture + aligned screenshot (2차)...')
+      await settlePageDomForArchitecture(page)
+      const archHtml = await page.content()
+      if (archHtml && archHtml.length >= MIN_VIABLE_HTML_LENGTH) {
+        domForArchitecture = archHtml
+        screenshotFinalB64 = await page.screenshot({ encoding: 'base64' })
+        console.log(
+          `[analyzer] 2nd snapshot OK: dom ${archHtml.length} bytes — screenshot aligned with pageArchitecture input`
+        )
+
+        const settled = extractMetadataAndPageText(archHtml)
+        const useSettled =
+          settled.pageText.length > pageText.length ||
+          (pageText.length < MIN_PAGE_TEXT_FOR_INSIGHTS &&
+            settled.pageText.length >= MIN_PAGE_TEXT_FOR_INSIGHTS)
+        if (useSettled) {
+          pageText = settled.pageText
+          metadata = settled.metadata
+          console.log(
+            `[analyzer] pageText/metadata: using settled DOM for AI (${settled.pageText.length} chars vs first ${firstPageTextLen})`
+          )
+        } else {
+          console.log(
+            `[analyzer] pageText/metadata: keeping 1st snapshot (${pageText.length} chars); settled ${settled.pageText.length} chars not richer`
+          )
+        }
+      } else {
+        console.warn(
+          `[analyzer] 2nd HTML too short (${archHtml?.length ?? 0}) — screenshot & architecture use 1st snapshot`
+        )
+      }
+    } catch (archErr) {
+      console.warn('[analyzer] Secondary DOM / screenshot failed:', archErr)
+      console.log('[analyzer] Screenshot & architecture input fall back to 1st snapshot')
     }
 
     await browser.close()
@@ -167,8 +256,9 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     return {
       lighthouse: lighthouseResult,
       axe: axeResults,
-      screenshot: `data:image/png;base64,${screenshot}`,
+      screenshot: `data:image/png;base64,${screenshotFinalB64}`,
       dom: html,
+      domForArchitecture,
       metadata,
       pageText: pageText || undefined,
     }

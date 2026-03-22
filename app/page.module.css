@@ -212,6 +212,63 @@
   cursor: not-allowed;
 }
 
+/* Comparison mode: saved-report path (UI only, disabled) */
+.comparisonSavedSection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.comparisonOrDivider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.comparisonOrLine {
+  flex: 1;
+  height: 1px;
+  background: #27272a;
+}
+
+.comparisonOrText {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #52525b;
+}
+
+.comparisonSavedIntro {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.comparisonSavedListButton {
+  width: 100%;
+  margin-top: 0.15rem;
+  padding: 0.75rem 1rem;
+  font-family: 'Pretendard', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #71717a;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  cursor: not-allowed;
+  opacity: 0.7;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.comparisonSavedListButton:disabled {
+  cursor: not-allowed;
+}
+
 /* Pills */
 .pills {
   display: flex;
@@ -302,110 +359,6 @@
 .resultText {
   font-size: 0.9rem;
   color: #d4d4d8;
-}
-
-/* Loading screen */
-.loadingScreen {
-  position: fixed;
-  inset: 0;
-  background: #0c110e;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.loadingContent {
-  text-align: center;
-  min-width: 36rem;
-  max-width: min(90vw, 42rem);
-  width: 100%;
-  padding: 2rem;
-}
-
-.loadingSpinner {
-  position: relative;
-  width: 48px;
-  height: 48px;
-  margin: 0 auto 2rem;
-}
-
-.loadingSpinnerRing {
-  position: absolute;
-  inset: 0;
-  border: 2px solid #1e3d2e;
-  border-radius: 50%;
-  border-top-color: #4ade80;
-  animation: loadingSpin 0.9s linear infinite;
-}
-
-.loadingSpinnerDot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 6px;
-  height: 6px;
-  margin: -3px 0 0 -3px;
-  background: #4ade80;
-  border-radius: 50%;
-}
-
-@keyframes loadingSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.loadingTitle {
-  font-family: 'Pretendard', sans-serif;
-  font-size: 1.5rem;
-  font-weight: 500;
-  color: #fff;
-  margin: 0 0 1.5rem;
-}
-
-.loadingProgressWrap {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #4ade80;
-}
-
-.loadingProgressLabel {
-  opacity: 0.9;
-}
-
-.loadingProgressPct {
-  min-width: 2.5rem;
-  text-align: right;
-}
-
-.loadingProgressBar {
-  height: 4px;
-  background: #1e3d2e;
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 1.5rem;
-}
-
-.loadingProgressFill {
-  height: 100%;
-  background: #4ade80;
-  border-radius: 2px;
-  transition: width 0.25s ease-out;
-}
-
-.loadingSubtext {
-  font-size: 0.875rem;
-  color: #9ca3af;
-  font-weight: 300;
-  margin: 0 0 0.25rem;
-  white-space: nowrap;
 }
 
 .footer {

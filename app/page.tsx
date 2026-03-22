@@ -1,7 +1,17 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { AnalysisLoadingView } from '@/app/components/analysis/AnalysisLoadingView'
+import { AnalysisErrorView } from '@/app/components/analysis/AnalysisErrorView'
+import {
+  getLoadingMessage,
+  LOADING_MESSAGE_INTERVAL_MS,
+  LOADING_MESSAGES,
+  MANDATORY_PRE_NAV_LOADING_MESSAGE,
+  MANDATORY_PRE_NAV_MESSAGE_INDEX,
+} from '@/lib/analysis-loading-messages'
+import { saveReportPayloadToIdb } from '@/lib/storage/site-improve-report-idb'
 import styles from './page.module.css'
 
 const FOCUS_OPTIONS: { id: string; label: string }[] = [
@@ -18,36 +28,20 @@ const FOCUS_OPTIONS: { id: string; label: string }[] = [
 
 const MAX_PRIORITIES = 3
 
-const LOADING_MESSAGES = [
-  '웹브라우저를 열어보는 중입니다.',
-  '주요 타겟과 목적을 분석해보는 중입니다.',
-  '페이지에 온점이 몇개인지 세어보는 중입니다.',
-  '숨겨져 있는 부분이 있는지 뒤져보는 중입니다.',
-  '잘 이해되지 않는 목적을 이해하려 노력중입니다.',
-  '전세계 사이트들을 뒤져서 경쟁사를 찾는 중입니다.',
-  '로딩 속도 확인을 위해 매우 느린 환경에서 테스트하는 중입니다.',
-  '접근성 검증을 위해 스크린리더로 들어보고 싶은데 귀가 없어서 안타까워하는 중입니다.',
-  '보안이 얼마나 철저한지 모의 해킹시도를 해보..지는 못했습니다.',
-  '얼마나 효율적인 스크립트를 짰는지 면접관의 눈으로 확인합니다.',
-  '잘 만들어진 부분을 보며 감탄 및 학습하고 있습니다.',
-  '검색엔진 노출에도 신경썼는지 검색해보는 중입니다.',
-  'AI가 좋아하는 사이트일지 친구들에게 물어보는 중입니다.',
-  '마케터들에게 무엇이 부족한지 연락해보는 중입니다.',
-  '너무 많은 정보를 받아 정리하기가 힘듭니다.',
-  '각 항목별 평가점수도 매겨보는 중입니다.',
-  '우선순위에 맞는 해결방안을 곰곰히 고민하고 있습니다.',
-  '팩트를 기반으로 하기위해 근거를 만들어보는... 중입니다.',
-  '누가봐도 이해할수있도록 쉽게 설명하기 위해 텍스트 작성중입니다.',
-  '미완료된 작업을 체크하는 중입니다.',
-  '오타를 찾고 있습니다.',
-  '개발자 성과평가가 좋은 점수를 받도록 기원하는 중입니다.',
-  '퇴근하고 싶습니다.',
-  '조금만 더 기다려 주세요.'
-]
+const MANDATORY_PRE_NAV_HOLD_MS = 3000
 
-function getLoadingMessage(messageTick: number): string {
-  const index = Math.min(messageTick, LOADING_MESSAGES.length - 1)
-  return LOADING_MESSAGES[index]
+function buildReportRequirementLine(priorityIds: string[]): string {
+  if (!priorityIds.length) return '전체 항목 분석'
+  return (
+    '우선 관심 영역: ' +
+    priorityIds.map((id) => FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
+  )
+}
+
+function delayMs(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
 }
 
 export default function Home() {
@@ -59,17 +53,25 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [messageTick, setMessageTick] = useState(0)
+  const [loadingSubtextOverride, setLoadingSubtextOverride] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
+  const [analysisError, setAnalysisError] = useState<{ message: string; statusCode: number } | null>(null)
+  const messageTickRef = useRef(0)
+
+  useEffect(() => {
+    messageTickRef.current = messageTick
+  }, [messageTick])
 
   useEffect(() => {
     if (!loading) {
       setProgress(0)
       setMessageTick(0)
+      setLoadingSubtextOverride(null)
       return
     }
     const interval = setInterval(() => {
       setMessageTick((t) => (t >= LOADING_MESSAGES.length - 1 ? t : t + 1))
-    }, 2500)
+    }, LOADING_MESSAGE_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [loading])
 
@@ -91,7 +93,45 @@ export default function Home() {
 
     setLoading(true)
     setResult(null)
+    setAnalysisError(null)
     let navigated = false
+    let failureHttpStatus: number | undefined
+
+    const persistAndNavigateToReport = async (report: { improvements: unknown }) => {
+      const payload = {
+        report,
+        url: url.trim(),
+        requirement: buildReportRequirementLine(priorities),
+        priorities,
+      }
+      let localOk = false
+      try {
+        localStorage.setItem('site-improve-report', JSON.stringify(payload))
+        localOk = true
+      } catch (storageError) {
+        console.warn('localStorage setItem failed, will try IndexedDB only:', storageError)
+      }
+      try {
+        await saveReportPayloadToIdb(payload)
+      } catch (idbError) {
+        console.error('IndexedDB save failed:', idbError)
+        if (!localOk) {
+          setAnalysisError({
+            message:
+              '브라우저 저장소에 리포트를 넣을 수 없습니다. 사생활 보호 모드·저장소 한도를 확인하거나 다른 브라우저로 시도해 주세요.',
+            statusCode: 507,
+          })
+          return false
+        }
+      }
+      if (messageTickRef.current < MANDATORY_PRE_NAV_MESSAGE_INDEX) {
+        setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+        await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
+        setLoadingSubtextOverride(null)
+      }
+      router.push('/report')
+      return true
+    }
 
     try {
       const body = { url: url.trim(), priorities }
@@ -125,24 +165,11 @@ export default function Home() {
                 setProgress(data.value)
               }
               if (data.type === 'report' && data.report?.improvements) {
-                const requirementText = priorities.length
-                  ? '우선 관심 영역: ' + priorities.map((id) => FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
-                  : '전체 항목 분석'
-                const payload = {
-                  report: data.report,
-                  url: url.trim(),
-                  requirement: requirementText,
-                  priorities,
-                }
-                try {
-                  localStorage.setItem('site-improve-report', JSON.stringify(payload))
-                } catch (storageError) {
-                  console.error('localStorage setItem failed:', storageError)
-                  setResult('리포트 데이터가 너무 커서 저장에 실패했습니다.')
+                const ok = await persistAndNavigateToReport(data.report)
+                if (ok) {
+                  navigated = true
                   return
                 }
-                navigated = true
-                router.push('/report')
                 return
               }
               if (data.type === 'error') {
@@ -157,37 +184,28 @@ export default function Home() {
       }
 
       if (!response.ok) {
+        failureHttpStatus = response.status
         const data = await response.json().catch(() => ({}))
         throw new Error(data.error || '분석 중 오류가 발생했습니다.')
       }
 
       const data = await response.json()
       if (typeof data.report === 'object' && data.report.improvements) {
-        const requirementText = priorities.length
-          ? '우선 관심 영역: ' + priorities.map((id) => FOCUS_OPTIONS.find((o) => o.id === id)?.label ?? id).join(', ')
-          : '전체 항목 분석'
-        const payload = {
-          report: data.report,
-          url: url.trim(),
-          requirement: requirementText,
-          priorities,
-        }
-        try {
-          localStorage.setItem('site-improve-report', JSON.stringify(payload))
-        } catch (storageError) {
-          console.error('localStorage setItem failed:', storageError)
-          setResult('리포트 데이터가 너무 커서 저장에 실패했습니다.')
+        const ok = await persistAndNavigateToReport(data.report)
+        if (ok) {
+          navigated = true
           return
         }
-        navigated = true
-        router.push('/report')
         return
       }
       setResult(data.report || '분석이 완료되었습니다.')
     } catch (error) {
       console.error('Error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      setResult(`오류가 발생했습니다: ${errorMessage}`)
+      setAnalysisError({
+        message: errorMessage,
+        statusCode: failureHttpStatus && failureHttpStatus >= 400 ? failureHttpStatus : 500,
+      })
     } finally {
       if (!navigated) setLoading(false)
     }
@@ -195,23 +213,20 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className={styles.loadingScreen}>
-        <div className={styles.loadingContent}>
-          <div className={styles.loadingSpinner}>
-            <div className={styles.loadingSpinnerRing} />
-            <div className={styles.loadingSpinnerDot} />
-          </div>
-          <h2 className={styles.loadingTitle}>Analyzing your URL...</h2>
-          <div className={styles.loadingProgressWrap}>
-            <span className={styles.loadingProgressLabel}>SCANNING ASSETS</span>
-            <span className={styles.loadingProgressPct}>{progress}%</span>
-          </div>
-          <div className={styles.loadingProgressBar}>
-            <div className={styles.loadingProgressFill} style={{ width: `${progress}%` }} />
-          </div>
-          <p className={styles.loadingSubtext}>{getLoadingMessage(messageTick)}</p>
-        </div>
-      </div>
+      <AnalysisLoadingView
+        progress={progress}
+        subtext={loadingSubtextOverride ?? getLoadingMessage(messageTick)}
+      />
+    )
+  }
+
+  if (analysisError) {
+    return (
+      <AnalysisErrorView
+        statusCode={analysisError.statusCode}
+        description={`분석을 완료할 수 없습니다.\n\n${analysisError.message}`}
+        onRetry={() => setAnalysisError(null)}
+      />
     )
   }
 
@@ -295,16 +310,36 @@ export default function Home() {
               disabled={loading || mode === 'comparison'}
             />
             {mode === 'comparison' && (
-              <input
-                type="url"
-                value={url2}
-                onChange={(e) => setUrl2(e.target.value)}
-                placeholder="https://example-secondary.com"
-                className={styles.urlInput}
-                required={false}
-                disabled={true}
-                aria-label="두 번째 URL"
-              />
+              <>
+                <input
+                  type="url"
+                  value={url2}
+                  onChange={(e) => setUrl2(e.target.value)}
+                  placeholder="https://example-secondary.com"
+                  className={styles.urlInput}
+                  required={false}
+                  disabled={true}
+                  aria-label="두 번째 URL"
+                />
+                <div className={styles.comparisonSavedSection}>
+                  <div className={styles.comparisonOrDivider} role="separator" aria-label="또는">
+                    <span className={styles.comparisonOrLine} />
+                    <span className={styles.comparisonOrText}>or</span>
+                    <span className={styles.comparisonOrLine} />
+                  </div>
+                  <p className={styles.comparisonSavedIntro}>
+                    저장된 결과를 불러와서 비교분석합니다.
+                  </p>
+                  <button
+                    type="button"
+                    className={styles.comparisonSavedListButton}
+                    disabled
+                    aria-disabled="true"
+                  >
+                    분석결과 저장목록
+                  </button>
+                </div>
+              </>
             )}
           </div>
 
@@ -337,6 +372,10 @@ export default function Home() {
           </button>
           <p className={styles.previewLink}>
             <a href="/report?preview=1" target="_blank" rel="noopener noreferrer">결과 페이지 미리보기</a>
+            {' · '}
+            <a href="/loading-preview" target="_blank" rel="noopener noreferrer">로딩 미리보기</a>
+            {' · '}
+            <a href="/error-preview" target="_blank" rel="noopener noreferrer">에러 화면 미리보기</a>
             — 화면 확인·수정 후 반영용
           </p>
         </form>
