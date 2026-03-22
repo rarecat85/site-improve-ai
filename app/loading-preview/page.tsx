@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useChromeNavVisibility } from '@/app/components/shell/chrome-nav-visibility'
 import { AnalysisLoadingView } from '@/app/components/analysis/AnalysisLoadingView'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
 import {
@@ -10,8 +11,14 @@ import {
 } from '@/lib/analysis-loading-messages'
 
 export default function LoadingPreviewPage() {
+  const { setHideHamburger } = useChromeNavVisibility()
   const [messageTick, setMessageTick] = useState(0)
   const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    setHideHamburger(true)
+    return () => setHideHamburger(false)
+  }, [setHideHamburger])
 
   useEffect(() => {
     const msgTimer = setInterval(() => {

@@ -9,6 +9,7 @@ import {
   saveReportPayloadToIdb,
   type StoredReportPayload,
 } from '@/lib/storage/site-improve-report-idb'
+import { ChromeNavVisibilityProvider, useChromeNavVisibility } from './chrome-nav-visibility'
 import styles from './app-chrome.module.css'
 
 const THEME_STORAGE_KEY = 'site-improve-theme'
@@ -32,6 +33,15 @@ function applyTheme(mode: ThemeMode) {
 }
 
 export function AppChrome({ children }: { children: React.ReactNode }) {
+  return (
+    <ChromeNavVisibilityProvider>
+      <AppChromeInner>{children}</AppChromeInner>
+    </ChromeNavVisibilityProvider>
+  )
+}
+
+function AppChromeInner({ children }: { children: React.ReactNode }) {
+  const { hideHamburger } = useChromeNavVisibility()
   const router = useRouter()
   const navId = useId()
   const panelId = `${navId}-panel`
@@ -71,6 +81,12 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
     const t = window.setTimeout(() => closeBtnRef.current?.focus(), 0)
     return () => window.clearTimeout(t)
   }, [navOpen, refreshSnapshots])
+
+  useEffect(() => {
+    if (hideHamburger) {
+      setNavOpen(false)
+    }
+  }, [hideHamburger])
 
   useEffect(() => {
     if (!navOpen) return
@@ -142,27 +158,33 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const showNavChrome = !hideHamburger
+
   return (
     <div className={styles.chromeRoot}>
-      <button
-        ref={openBtnRef}
-        type="button"
-        className={`${styles.menuButton} ${navOpen ? styles.menuButtonHidden : ''}`}
-        aria-label="메뉴 열기"
-        aria-expanded={navOpen}
-        aria-controls={panelId}
-        onClick={openNav}
-      >
-        <span className={styles.menuIcon} aria-hidden>
-          <span />
-          <span />
-          <span />
-        </span>
-      </button>
+      {showNavChrome ? (
+        <button
+          ref={openBtnRef}
+          type="button"
+          className={`${styles.menuButton} ${navOpen ? styles.menuButtonHidden : ''}`}
+          aria-label="메뉴 열기"
+          aria-expanded={navOpen}
+          aria-controls={panelId}
+          onClick={openNav}
+        >
+          <span className={styles.menuIcon} aria-hidden>
+            <span />
+            <span />
+            <span />
+          </span>
+        </button>
+      ) : null}
 
-      <div className={`${styles.contentShell} ${navOpen ? styles.contentShellOpen : ''}`}>{children}</div>
+      <div className={`${styles.contentShell} ${navOpen && showNavChrome ? styles.contentShellOpen : ''}`}>
+        {children}
+      </div>
 
-      {navOpen ? (
+      {showNavChrome && navOpen ? (
         <div className={styles.drawerLayer}>
           <div className={styles.drawerAnchor}>
             <div

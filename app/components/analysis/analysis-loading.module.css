@@ -11,7 +11,7 @@
 .loadingContent {
   text-align: center;
   min-width: min(36rem, 100%);
-  max-width: min(92vw, 48rem);
+  max-width: min(96vw, 64rem);
   width: 100%;
   padding: 2rem;
 }
@@ -94,13 +94,24 @@
   transition: width 0.25s ease-out;
 }
 
+.loadingSubtextOuter {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: center;
+}
+
 .loadingSubtext {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   font-size: clamp(1rem, 2.4vw, 1.125rem);
   color: var(--app-text-secondary);
   font-weight: 400;
-  margin: 0 0 0.25rem;
-  line-height: 1.65;
-  max-width: 38rem;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  text-align: center;
 }

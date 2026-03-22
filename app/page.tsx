@@ -20,6 +20,7 @@ import {
   saveReportPayloadToIdb,
   type ReportSnapshotListItem,
 } from '@/lib/storage/site-improve-report-idb'
+import { useChromeNavVisibility } from '@/app/components/shell/chrome-nav-visibility'
 import styles from './page.module.css'
 
 const FOCUS_OPTIONS: { id: string; label: string }[] = [
@@ -53,6 +54,7 @@ function delayMs(ms: number) {
 }
 
 export default function Home() {
+  const { setHideHamburger } = useChromeNavVisibility()
   const router = useRouter()
   const [mode, setMode] = useState<'single' | 'comparison'>('single')
   const [url, setUrl] = useState('')
@@ -77,6 +79,10 @@ export default function Home() {
   useEffect(() => {
     messageTickRef.current = messageTick
   }, [messageTick])
+
+  useEffect(() => {
+    setHideHamburger(loading || analysisError != null)
+  }, [loading, analysisError, setHideHamburger])
 
   useEffect(() => {
     if (!loading) {
@@ -121,7 +127,7 @@ export default function Home() {
         console.warn('localStorage setItem failed, will try IndexedDB only:', storageError)
       }
       try {
-        await saveReportPayloadToIdb(payload)
+        await saveReportPayloadToIdb(payload, { appendHistory: false })
       } catch (idbError) {
         console.error('IndexedDB save failed:', idbError)
         if (!localOk) {

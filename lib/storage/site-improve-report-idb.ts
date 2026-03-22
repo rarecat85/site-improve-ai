@@ -30,7 +30,10 @@ export type ReportSnapshotListItem = {
 }
 
 export type SaveReportToIdbOptions = {
-  /** false면 `latest`만 갱신하고 히스토리 키는 추가하지 않음 (목록에서 복원 시 등) */
+  /**
+   * false: `latest`만 갱신(분석 직후·메뉴 복원 시). 사이드 메뉴 목록에 안 올라감.
+   * true(기본): 스냅샷 키 추가 → 「저장된 분석」목록에 표시(리포트 저장 버튼).
+   */
   appendHistory?: boolean
 }
 
@@ -155,7 +158,8 @@ function metaFromPayload(id: string, p: StoredReportPayload): ReportSnapshotList
 }
 
 /**
- * 저장 히스토리 메타 목록 (최신순). 스냅샷이 없고 latest만 있으면 latest 한 줄을 반환.
+ * 명시적 저장(`appendHistory: true`)으로 쌓인 스냅샷 메타만 (최신순).
+ * 분석 직후 `latest`만 갱신된 결과는 목록에 넣지 않음.
  */
 export async function listReportSnapshotMetaFromIdb(): Promise<ReportSnapshotListItem[]> {
   const db = await openDb()
@@ -174,24 +178,8 @@ export async function listReportSnapshotMetaFromIdb(): Promise<ReportSnapshotLis
         const metas: ReportSnapshotListItem[] = []
         let idx = 0
 
-        const pushLatestFallback = () => {
-          const g = store.get(KEY_LATEST)
-          g.onerror = () => reject(g.error ?? new Error('IndexedDB read failed'))
-          g.onsuccess = () => {
-            const v = g.result as StoredReportPayload | undefined
-            if (v && typeof v === 'object' && v.report) {
-              metas.push(metaFromPayload(KEY_LATEST, v))
-            }
-            resolve(metas)
-          }
-        }
-
         const nextSnap = () => {
           if (idx >= snapKeys.length) {
-            if (metas.length === 0) {
-              pushLatestFallback()
-              return
-            }
             resolve(metas)
             return
           }
@@ -206,7 +194,7 @@ export async function listReportSnapshotMetaFromIdb(): Promise<ReportSnapshotLis
         }
 
         if (snapKeys.length === 0) {
-          pushLatestFallback()
+          resolve([])
           return
         }
         nextSnap()

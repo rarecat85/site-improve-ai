@@ -25,7 +25,9 @@ export function AnalysisLoadingView({ progress, subtext }: AnalysisLoadingViewPr
         <div className={styles.loadingProgressBar}>
           <div className={styles.loadingProgressFill} style={{ width: `${pct}%` }} />
         </div>
-        <p className={styles.loadingSubtext}>{subtext}</p>
+        <div className={styles.loadingSubtextOuter}>
+          <p className={styles.loadingSubtext}>{subtext}</p>
+        </div>
       </div>
     </div>
   )

@@ -1,13 +1,6 @@
-/* 미리보기 배너 */
-.previewBanner {
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  background: var(--app-banner-muted-bg);
-  border: 1px solid var(--app-point);
-  border-radius: 8px;
-  color: var(--app-point);
-  font-size: 0.9rem;
-  text-align: center;
+/* 상단 고정 PreviewModeBanner와 겹치지 않도록 */
+.containerWithPreviewBanner {
+  padding-top: calc(2rem + 2.85rem);
 }
 
 /* 스크린샷 톤앤매너: 매우 어두운 배경 + 밝은 민트 포인트 */
