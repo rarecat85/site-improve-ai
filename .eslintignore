@@ -1,0 +1,3 @@
+# Markdown — ESLint JS 파서 대상이 아님 (design.md 등 참고 문서)
+*.md
+**/*.md

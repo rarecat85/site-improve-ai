@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { MIN_VIABLE_HTML_LENGTH } from '@/lib/constants/analysis-pipeline'
+import { userFacingAnalysisError } from '@/lib/utils/analysis-error-message'
 
 // Next.js API Route 타임아웃 설정 (최대 5분)
 export const maxDuration = 300
@@ -9,7 +11,13 @@ export async function POST(request: NextRequest) {
   try {
     // 동적 import로 에러 방지
     const { analyzeWebsite } = await import('@/lib/services/analyzer')
-    const { generateReport, analyzeContentInsights, findSimilarSites } = await import('@/lib/services/ai')
+    const { extractPageArchitecture } = await import('@/lib/utils/page-architecture')
+    const {
+      generateReport,
+      analyzeContentInsights,
+      findSimilarSites,
+      summarizePageArchitectureSections,
+    } = await import('@/lib/services/ai')
     // 요청 본문 파싱
     let body
     try {
@@ -125,11 +133,37 @@ export async function POST(request: NextRequest) {
           send({ type: 'progress', value: 55 })
 
           console.log('Step 5-7: Generating report and content insights...')
-          const [reportResult, contentInsights] = await Promise.all([
+          const settledDom = analysisResults.domForArchitecture
+          const archFromSettled = Boolean(
+            settledDom && settledDom.length >= MIN_VIABLE_HTML_LENGTH
+          )
+          const archSourceHtml = archFromSettled ? settledDom : analysisResults.dom
+          console.log(
+            `[analyze] pageArchitecture HTML: ${archFromSettled ? 'domForArchitecture (settled)' : 'dom (1st snapshot)'} — ${archSourceHtml?.length ?? 0} chars`
+          )
+          const ptLen = analysisResults.pageText?.length ?? 0
+          console.log(
+            `[analyze] pageText for content insights: ${ptLen} chars (enriched from settled DOM when longer than 1st snapshot)`
+          )
+
+          const archExtract = archSourceHtml
+            ? extractPageArchitecture(archSourceHtml)
+            : { rows: [], sections: [] }
+
+          const [reportResult, contentInsights, archSummarized] = await Promise.all([
             generateReport(requirement, analysisResults),
             analyzeContentInsights(analysisResults),
+            archExtract.rows.length > 0 && archExtract.sections.length > 0
+              ? summarizePageArchitectureSections(archExtract.sections, archExtract.rows)
+              : Promise.resolve({ sections: [], rows: archExtract.rows }),
           ])
           const report = reportResult
+          if (archSummarized.rows.length > 0) {
+            report.pageArchitecture = {
+              rows: archSummarized.rows,
+              sections: archSummarized.sections,
+            }
+          }
           if (contentInsights) {
             report.contentSummary = contentInsights.contentSummary
             report.targetAudience = contentInsights.targetAudience
@@ -152,10 +186,9 @@ export async function POST(request: NextRequest) {
           send({ type: 'progress', value: 100 })
         } catch (streamError: any) {
           console.error('Analysis error:', streamError)
-          let errorMessage = streamError?.message || '분석 중 오류가 발생했습니다.'
-          if (errorMessage.includes('API_KEY')) errorMessage = 'API 키가 설정되지 않았거나 유효하지 않습니다. .env.local에서 GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY를 확인해주세요.'
-          else if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) errorMessage = '분석 시간이 초과되었습니다. 더 작은 웹사이트로 시도해보세요.'
-          else if (errorMessage.includes('ENOTFOUND') || errorMessage.includes('ECONNREFUSED')) errorMessage = '웹사이트에 연결할 수 없습니다. URL을 확인해주세요.'
+          const errorMessage = userFacingAnalysisError(
+            streamError?.message || '분석 중 오류가 발생했습니다.'
+          )
           send({ type: 'error', error: errorMessage })
         } finally {
           controller.close()
@@ -172,21 +205,10 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Analysis error:', error)
     
-    // 에러 타입에 따라 다른 메시지 반환
-    let errorMessage = '분석 중 오류가 발생했습니다.'
-    
-    if (error instanceof Error) {
-      errorMessage = error.message
-      
-      // 특정 에러 메시지 처리
-      if (error.message.includes('API_KEY')) {
-        errorMessage = 'API 키가 설정되지 않았거나 유효하지 않습니다. .env.local에서 GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY를 확인해주세요.'
-      } else if (error.message.includes('timeout') || error.message.includes('TIMEOUT')) {
-        errorMessage = '분석 시간이 초과되었습니다. 더 작은 웹사이트로 시도해보세요.'
-      } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
-        errorMessage = '웹사이트에 연결할 수 없습니다. URL을 확인해주세요.'
-      }
-    }
+    const errorMessage =
+      error instanceof Error
+        ? userFacingAnalysisError(error.message)
+        : userFacingAnalysisError(String(error))
     
     return NextResponse.json(
       { error: errorMessage, details: error instanceof Error ? error.stack : String(error) },

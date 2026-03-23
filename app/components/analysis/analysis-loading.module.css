@@ -1,0 +1,117 @@
+.loadingScreen {
+  position: fixed;
+  inset: 0;
+  background: var(--app-loading-screen);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loadingContent {
+  text-align: center;
+  min-width: min(36rem, 100%);
+  max-width: min(96vw, 64rem);
+  width: 100%;
+  padding: 2rem;
+}
+
+.loadingSpinner {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 2rem;
+}
+
+.loadingSpinnerRing {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--app-loading-track);
+  border-radius: 50%;
+  border-top-color: var(--app-point);
+  animation: loadingSpin 0.9s linear infinite;
+}
+
+.loadingSpinnerDot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  background: var(--app-point);
+  border-radius: 50%;
+}
+
+@keyframes loadingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loadingTitle {
+  font-family: 'Pretendard', sans-serif;
+  font-size: clamp(1.5rem, 4vw, 1.85rem);
+  font-weight: 500;
+  color: var(--app-text-primary);
+  margin: 0 0 1.75rem;
+}
+
+.loadingProgressWrap {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.65rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-point);
+}
+
+.loadingProgressLabel {
+  opacity: 0.9;
+}
+
+.loadingProgressPct {
+  min-width: 3rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.loadingProgressBar {
+  height: 10px;
+  background: var(--app-loading-track);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 2.25rem;
+}
+
+.loadingProgressFill {
+  height: 100%;
+  background: var(--app-point);
+  border-radius: 5px;
+  transition: width 0.25s ease-out;
+}
+
+.loadingSubtextOuter {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: center;
+}
+
+.loadingSubtext {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: clamp(1rem, 2.4vw, 1.125rem);
+  color: var(--app-text-secondary);
+  font-weight: 400;
+  margin: 0;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  text-align: center;
+}

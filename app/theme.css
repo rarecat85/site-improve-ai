@@ -1,0 +1,62 @@
+/**
+ * design.md — Technical Oracle 토큰
+ * html[data-theme] 로 다크/라이트 전환
+ */
+html[data-theme='dark'],
+html:not([data-theme]) {
+  --app-bg: #000000;
+  --app-surface-deep: #0a0a0a;
+  --app-surface-code: #0c0c0c;
+  --app-surface-nested: #0f0f0f;
+  --app-surface-raised: #121212;
+  --app-surface-raised2: #121212;
+  --app-surface-muted: #262626;
+  --app-border-strong: rgba(255, 255, 255, 0.1);
+  --app-border-panel: rgba(255, 255, 255, 0.12);
+  --app-border-mid: rgba(255, 255, 255, 0.14);
+  --app-border-icon: rgba(255, 255, 255, 0.18);
+  --app-cell-border: rgba(255, 255, 255, 0.14);
+  --app-text-primary: #ffffff;
+  --app-text-bright: #e5e5e5;
+  --app-text-secondary: #a0a0a0;
+  --app-text-muted: #737373;
+  --app-point: #3db388;
+  --app-point-hover: #4dc49a;
+  --app-cta-on-point: #0a0a0a;
+  --app-alert: #ff5a5f;
+  --app-banner-muted-bg: #121212;
+  --app-body-fallback-bg: #000000;
+  --app-body-fallback-fg: #e5e5e5;
+  --app-step-label: #2a7d62;
+  --app-loading-track: rgba(61, 179, 136, 0.22);
+  --app-loading-screen: #000000;
+}
+
+html[data-theme='light'] {
+  --app-bg: #ffffff;
+  --app-surface-deep: #f8f9fa;
+  --app-surface-code: #f1f3f5;
+  --app-surface-nested: #f8f9fa;
+  --app-surface-raised: #f8f9fa;
+  --app-surface-raised2: #f1f3f5;
+  --app-surface-muted: #e9ecef;
+  --app-border-strong: rgba(0, 0, 0, 0.08);
+  --app-border-panel: rgba(0, 0, 0, 0.1);
+  --app-border-mid: rgba(0, 0, 0, 0.12);
+  --app-border-icon: rgba(0, 0, 0, 0.14);
+  --app-cell-border: rgba(0, 0, 0, 0.12);
+  --app-text-primary: #111111;
+  --app-text-bright: #1a1a1a;
+  --app-text-secondary: #666666;
+  --app-text-muted: #777777;
+  --app-point: #20c997;
+  --app-point-hover: #1db584;
+  --app-cta-on-point: #111111;
+  --app-alert: #e53e3e;
+  --app-banner-muted-bg: #f1f3f5;
+  --app-body-fallback-bg: #ffffff;
+  --app-body-fallback-fg: #111111;
+  --app-step-label: #18856a;
+  --app-loading-track: rgba(32, 201, 151, 0.2);
+  --app-loading-screen: #ffffff;
+}
