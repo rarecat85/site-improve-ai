@@ -6,7 +6,7 @@
 |------|------|-----------|
 | **와이어프레임 (`rows`)** | 페이지를 위→아래로 나눈 **칸(id·라벨)** 격자. DOM 상위 블록을 규칙으로 추출. | `extractPageArchitecture` — **Cheerio**, 결정적 규칙 |
 | **섹션 스니펫 (`sections` 초기)** | 각 칸과 1:1인 **텍스트 발췌**(최대 700자), AI 입력용. | 위와 동일 추출 과정에서 함께 생성 |
-| **섹션 요약(최종 `sections`)** | 각 블록에 대한 **제목·평가축·1~10점·설명** — 요약할 가치 없는 블록은 제외 가능. | `summarizePageArchitectureSections` — **Gemini** |
+| **섹션 요약(최종 `sections`)** | 각 블록에 대한 **제목·평가축·1~10점·설명** — 요약할 가치 없는 블록은 제외 가능. | `summarizePageArchitectureSections` — **Claude (Anthropic)** |
 
 구현: `lib/utils/page-architecture.ts`, `lib/services/ai.ts`. 오케스트레이션: `app/api/analyze/route.ts`(HTML은 `domForArchitecture` 우선, 없으면 `dom`).
 
@@ -85,7 +85,7 @@
 
 ### 3.1 모델
 
-- **Google Gemini** (`callGemini`).
+- **Anthropic Claude** (`callClaude`, 예: `claude-haiku-4-5-20251001`). 구현은 `lib/services/ai.ts` 참고.
 
 ### 3.2 입력
 
@@ -146,7 +146,7 @@
 |------|------|
 | 레이아웃 정확도 | 실제 CSS·반응형과 무관하게 **DOM 트리 상위 블록** 기준이라, 디자인 의도와 다르게 잘릴 수 있음. |
 | SPA/지연 로딩 | `domForArchitecture`로 보강하지만, 늦게 붙는 본문은 발췌에 없을 수 있음. |
-| 섹션 요약 | Gemini 판단·할루시네이션 가능성 — 프롬프트로 “발췌에 없으면 상상 금지”를 걸어 둠. |
+| 섹션 요약 | Claude 등 LLM 판단·할루시네이션 가능성 — 프롬프트로 “발췌에 없으면 상상 금지”를 걸어 둠. |
 
 ---
 

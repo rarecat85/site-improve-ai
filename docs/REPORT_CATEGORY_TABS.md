@@ -72,6 +72,8 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 아래는 **`generateReportForCategory`** 기준입니다.  
 **모델 선택**: SEO → **OpenAI (`gpt-4o`)**, 접근성·성능·모범사례 → **Anthropic Claude**, AEO/GEO → **Gemini**.
 
+**Overview 탭 전용 보조**(같은 분석 요청 안에서 병렬 실행 — `generateReport`와 별도 함수): 사이트 목적·타겟 인사이트와 유사·경쟁 사이트는 **OpenAI**, Visual Architecture **Section Summaries**는 **Claude** (`lib/services/ai.ts`).
+
 | 카테고리 | 프롬프트에 넣는 분석 데이터 (`buildCategoryPromptContent`) | 프롬프트 초점 (`CATEGORY_FOCUS`) |
 |----------|------------------------------------------------------------|-----------------------------------|
 | **SEO** | Lighthouse 요약 중 **카테고리 라벨이 SEO** 인 감사만 (`filterLighthouseItemsByCategory`) | 크롤링·인덱싱, 메타·제목, 구조화 데이터, 링크·모바일 스니펫. **제공된 감사 항목** 기반. |

@@ -13,9 +13,9 @@
         → fetchCruxSummary (선택, Chrome UX Report API)
         → runAiseoAudit (aiseo-audit · AEO/GEO)
         → generateReport (다중 LLM + computeDashboardGrades)
-        → analyzeContentInsights (Gemini · 목적/타겟)
-        → summarizePageArchitectureSections (Gemini · 섹션 요약)
-        → findSimilarSites (Gemini · 유사·경쟁 사이트)
+        → analyzeContentInsights (OpenAI · 목적/타겟)
+        → summarizePageArchitectureSections (Claude · 섹션 요약)
+        → findSimilarSites (OpenAI · 유사·경쟁 사이트)
     → report 객체 저장 → ReportView에서 표시
 ```
 
@@ -54,7 +54,7 @@
 
 | 필드 | 도구(수집) | 도구(생성) | 내용 |
 |------|------------|------------|------|
-| `contentSummary` | 아래 표 | **Gemini** (`analyzeContentInsights`) | 페이지가 무엇을 하는지 요약 |
+| `contentSummary` | 아래 표 | **OpenAI** (`analyzeContentInsights`) | 페이지가 무엇을 하는지 요약 |
 | `targetAudience` | 아래 표 | 동일 | 주요 독자·고객층 서술 |
 
 **수집 단계 (Puppeteer + Cheerio)**
@@ -77,7 +77,7 @@
 | 단계 | 도구 | 하는 일 |
 |------|------|---------|
 | 입력 | — | 위에서 나온 **URL**, `contentSummary`, `targetAudience` |
-| 생성 | **Gemini** (`findSimilarSites`) | JSON으로 최대 3개의 `url`, `name`, `matchReason`, `fameReason` 제안 |
+| 생성 | **OpenAI** (`findSimilarSites`) | JSON으로 최대 3개의 `url`, `name`, `matchReason`, `fameReason` 제안 |
 
 **주의**: 실제 **웹 검색 API나 크롤링으로 후보를 찾는 것이 아닙니다.** 모델이 프롬프트와 학습된 지식으로 URL을 제안하며, “공식 https만” 같은 규칙만 코드상으로 걸려 있습니다.
 
@@ -90,7 +90,7 @@
 | 구성요소 | 도구 | 하는 일 |
 |----------|------|---------|
 | **rows** (와이어프레임 칸) | **Cheerio** (`extractPageArchitecture`) | 안정화된 HTML에서 상위 블록을 잘라 레이블·셀 ID 부여. 쿠키 배너·푸터 등은 휴리스틱으로 제외 |
-| **sections** (섹션 요약 카드) | **Gemini** (`summarizePageArchitectureSections`) | 각 블록 발췌를 보고 제목·지표·설명 생성. 의미 없는 크롬만 있으면 빈 배열 가능(폴백 로직 있음) |
+| **sections** (섹션 요약 카드) | **Claude** (`summarizePageArchitectureSections`) | 각 블록 발췌를 보고 제목·지표·설명 생성. 의미 없는 크롬만 있으면 빈 배열 가능(폴백 로직 있음) |
 
 HTML 소스는 가능하면 **`domForArchitecture`**(네트워크 유휴 후 2차 스냅샷), 없으면 **1차 `dom`**을 사용합니다.
 

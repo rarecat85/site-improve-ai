@@ -1,6 +1,6 @@
 # 유사·경쟁 사이트 후보 — 정의 규칙
 
-리포트 **「유사·경쟁 사이트 검색」** 블록에 표시되는 후보는, 외부 검색·크롤 API가 아니라 **`lib/services/ai.ts`의 `findSimilarSites`**가 **Google Gemini**에 보내는 프롬프트 규칙과, 응답을 받은 뒤 적용하는 **코드 후처리**로 결정됩니다.
+리포트 **「유사·경쟁 사이트 검색」** 블록에 표시되는 후보는, 외부 검색·크롤 API가 아니라 **`lib/services/ai.ts`의 `findSimilarSites`**가 **OpenAI (`gpt-4o`)** 에 보내는 프롬프트 규칙과, 응답을 받은 뒤 적용하는 **코드 후처리**로 결정됩니다.
 
 구현 위치: `findSimilarSites` (동일 파일 상단 `SimilarSite` 타입 참고).
 
@@ -13,7 +13,7 @@
 | 입력 | 출처 |
 |------|------|
 | 분석 대상 **URL** | 사용자가 분석에 넣은 페이지 URL |
-| **페이지 요약** (`contentSummary`) | 같은 파이프라인의 `analyzeContentInsights`(Gemini) 결과 |
+| **페이지 요약** (`contentSummary`) | 같은 파이프라인의 `analyzeContentInsights`(OpenAI) 결과 |
 | **주요 타겟층** (`targetAudience`) | 동일 |
 
 즉, **현재 페이지 텍스트 전체가 아니라**, 이미 한 번 요약된 문장과 타겟 설명에 기대어 후보를 제안합니다.
@@ -49,6 +49,8 @@
 ## 5. 출력 형식 (프롬프트 + 코드)
 
 ### 5.1 모델이 내보내야 하는 JSON
+
+(호출 모델: OpenAI Chat Completions — 구현상 `gpt-4o`.)
 
 - 최상위 키: `sites` — 배열.
 - 각 요소 필드(모두 **문자열**):
