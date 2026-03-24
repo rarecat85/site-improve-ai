@@ -7,8 +7,11 @@ import type { ReportData } from '@/lib/types/report-data'
 export const MOCK_REPORT_PREVIEW: ReportData = {
   contentSummary:
     '이 페이지는 B2B 대상 SaaS 제품의 랜딩 페이지로, 주요 기능 소개, 가격 안내, 고객 사례를 제공합니다. CTA는 무료 체험 신청과 데모 요청입니다.',
-  targetAudience:
-    'B2B 의사결정자(IT·마케팅 담당자), 25~45세. 검색과 콘텐츠 비교를 통해 도입을 검토하는 사용자가 많습니다.',
+  audienceSegmentLabel: 'B2B · SaaS 도입 검토 의사결정자',
+  audienceProfileDetail:
+    'IT·마케팅·운영 담당자 등 기업 내 디지털 도구를 고르는 역할을 맡은 25~45세 전후가 주를 이룹니다. 중소·중견에서 엔터프라이즈까지 팀 단위 도입을 검토하는 경우가 많습니다.',
+  audienceBehaviorDetail:
+    '검색·리뷰·비교표를 통해 경쟁 제품과 기능·가격을 맞춰 본 뒤, 데모나 무료 체험으로 검증하려는 흐름이 두드러집니다. 상단 요약과 가격·고객 사례 블록을 빠르게 스캔하는 패턴이 보입니다.',
   similarSites: [
     {
       url: 'https://www.example-tool-a.com',

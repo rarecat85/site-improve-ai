@@ -418,21 +418,42 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
           </div>
         </section>
       )}
-      {reportData.targetAudience && (
-        <section className={styles.sectionBlock} aria-label="타겟층 분석">
-          <h2 className={styles.sectionTitle}>주요 타겟층 분석</h2>
-          <div className={styles.targetGrid}>
+      {reportData.audienceSegmentLabel &&
+        reportData.audienceProfileDetail &&
+        reportData.audienceBehaviorDetail && (
+          <section className={styles.sectionBlock} aria-label="독자와 이용 방식">
+            <h2 className={styles.sectionTitle}>독자와 이용 방식</h2>
+            <div className={styles.targetGrid}>
+              <div className={styles.targetCol}>
+                <h3 className={styles.targetColHeading}>어떤 사람이 주로 보나요?</h3>
+                <p className={styles.audienceSegmentBadge} title="핵심 대상 한 줄">
+                  {reportData.audienceSegmentLabel}
+                </p>
+                <p className={styles.sectionText}>{reportData.audienceProfileDetail}</p>
+              </div>
+              <div className={styles.targetCol}>
+                <h3 className={styles.targetColHeading}>어떻게 쓰나요?</h3>
+                <p className={styles.sectionText}>{reportData.audienceBehaviorDetail}</p>
+              </div>
+            </div>
+          </section>
+        )}
+      {reportData.targetAudience &&
+        !(
+          reportData.audienceSegmentLabel &&
+          reportData.audienceProfileDetail &&
+          reportData.audienceBehaviorDetail
+        ) && (
+          <section className={styles.sectionBlock} aria-label="타겟 요약(이전 형식)">
+            <h2 className={styles.sectionTitle}>독자와 이용 방식</h2>
+            <p className={styles.legacyAudienceNote}>
+              이전에 저장된 분석 형식입니다. 새로 분석하면 대상·행동이 나뉘어 표시됩니다.
+            </p>
             <div className={styles.targetCol}>
-              <h3 className={styles.targetColTitle}>인구통계</h3>
               <p className={styles.sectionText}>{reportData.targetAudience}</p>
             </div>
-            <div className={styles.targetCol}>
-              <h3 className={styles.targetColTitle}>행동 양식</h3>
-              <p className={styles.sectionText}>{reportData.targetAudience}</p>
-            </div>
-          </div>
-        </section>
-      )}
+          </section>
+        )}
       {reportData.similarSites && reportData.similarSites.length > 0 && (
         <section className={styles.sectionBlock} aria-label="유사·경쟁 사이트">
           <h2 className={styles.sectionTitle}>유사·경쟁 사이트 검색</h2>

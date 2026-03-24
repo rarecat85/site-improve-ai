@@ -50,12 +50,15 @@
 
 ---
 
-## 4. 사이트 목적 분석 · 주요 타겟층 분석
+## 4. 사이트 목적 분석 · 독자·이용 방식
 
 | 필드 | 도구(수집) | 도구(생성) | 내용 |
 |------|------------|------------|------|
 | `contentSummary` | 아래 표 | **OpenAI** (`analyzeContentInsights`) | 페이지가 무엇을 하는지 요약 |
-| `targetAudience` | 아래 표 | 동일 | 주요 독자·고객층 서술 |
+| `audienceSegmentLabel` | 아래 표 | 동일 | 핵심 대상 한 줄(B2B/B2C 등 유형이 드러나게) |
+| `audienceProfileDetail` | 아래 표 | 동일 | 누가 쓰는지(연령·역할·산업 등) |
+| `audienceBehaviorDetail` | 아래 표 | 동일 | 방문 목적·정보 탐색·전환 맥락 |
+| `targetAudience` (레거시) | — | — | 과거 저장분만; 신규 분석에서는 미사용 |
 
 **수집 단계 (Puppeteer + Cheerio)**
 
@@ -67,7 +70,7 @@
 
 **생성 단계 (AI)**
 
-- 본문이 `MIN_PAGE_TEXT_FOR_INSIGHTS`(기본 50자) 미만이면 **인사이트 API를 호출하지 않고** 두 필드 모두 생략됩니다.
+- 본문이 `MIN_PAGE_TEXT_FOR_INSIGHTS`(기본 50자) 미만이면 **인사이트 API를 호출하지 않고** 위 필드가 모두 생략됩니다.
 - 프롬프트에는 **메타데이터 블록 + 본문 최대 약 1만 자**가 들어가며, **검색·GA 등 외부 데이터는 없다**고 명시되어 있습니다.
 
 ---
@@ -76,7 +79,7 @@
 
 | 단계 | 도구 | 하는 일 |
 |------|------|---------|
-| 입력 | — | 위에서 나온 **URL**, `contentSummary`, `targetAudience` |
+| 입력 | — | 위에서 나온 **URL**, `contentSummary`, 타겟 세 필드(`audienceSegmentLabel` 등) |
 | 생성 | **OpenAI** (`findSimilarSites`) | JSON으로 최대 3개의 `url`, `name`, `matchReason`, `fameReason` 제안 |
 
 **주의**: 실제 **웹 검색 API나 크롤링으로 후보를 찾는 것이 아닙니다.** 모델이 프롬프트와 학습된 지식으로 URL을 제안하며, “공식 https만” 같은 규칙만 코드상으로 걸려 있습니다.

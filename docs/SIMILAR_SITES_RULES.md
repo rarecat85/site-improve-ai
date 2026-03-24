@@ -10,17 +10,17 @@
 
 ## 1. 입력(모델에 넘기는 정보)
 
-후보를 “정의”하기 전에 모델은 아래 세 가지만 받습니다.
+후보를 “정의”하기 전에 모델은 아래 정보만 받습니다.
 
 | 입력 | 출처 |
 |------|------|
 | 분석 대상 **URL** | 사용자가 분석에 넣은 페이지 URL |
 | **페이지 요약** (`contentSummary`) | 같은 파이프라인의 `analyzeContentInsights`(OpenAI) 결과 |
-| **주요 타겟층** (`targetAudience`) | 동일 |
+| **타겟(세분)** | `audienceSegmentLabel`, `audienceProfileDetail`, `audienceBehaviorDetail` — 동일 API 결과 |
 
 즉, **현재 페이지 텍스트 전체가 아니라**, 이미 한 번 요약된 문장과 타겟 설명에 기대어 후보를 제안합니다.
 
-**이전 단계와의 차이:** `analyzeContentInsights`는 브라우저에서 추출한 **페이지 본문(`pageText`)을 최대 약 1만 자**까지와 메타데이터(제목·메타 설명·헤딩 구조)를 보고 `contentSummary`·`targetAudience`를 생성합니다. 반면 `findSimilarSites`에는 그 **요약·타겟 문장과 분석 URL만** 넘어가므로, 유사 사이트 후보는 전체 본문이 아니라 **한 번 압축된 인사이트**에만 의존합니다. (지연 로딩 등으로 본문이 짧으면 인사이트 품질·유사 사이트 품질 모두에 영향.)
+**이전 단계와의 차이:** `analyzeContentInsights`는 브라우저에서 추출한 **페이지 본문(`pageText`)을 최대 약 1만 자**까지와 메타데이터(제목·메타 설명·헤딩 구조)를 보고 `contentSummary`와 타겟 세 필드(`audienceSegmentLabel` 등)를 생성합니다. 반면 `findSimilarSites`에는 그 **요약·타겟(세 줄 구조)과 분석 URL만** 넘어가므로, 유사 사이트 후보는 전체 본문이 아니라 **한 번 압축된 인사이트**에만 의존합니다. (지연 로딩 등으로 본문이 짧으면 인사이트 품질·유사 사이트 품질 모두에 영향.)
 
 ---
 
@@ -93,7 +93,7 @@
 
 ## 7. 호출 조건
 
-`app/api/analyze/route.ts`에서 **`contentSummary`와 `targetAudience`가 둘 다 있을 때만** `findSimilarSites`를 호출합니다. 앞 단계 인사이트가 실패하면 유사 사이트 블록도 나오지 않습니다.
+`app/api/analyze/route.ts`에서 **`contentSummary`와 타겟 세 필드가 모두 있을 때만** `findSimilarSites`를 호출합니다. 앞 단계 인사이트가 실패하면 유사 사이트 블록도 나오지 않습니다.
 
 ---
 

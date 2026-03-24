@@ -166,16 +166,23 @@ export async function POST(request: NextRequest) {
           }
           if (contentInsights) {
             report.contentSummary = contentInsights.contentSummary
-            report.targetAudience = contentInsights.targetAudience
+            report.audienceSegmentLabel = contentInsights.audienceSegmentLabel
+            report.audienceProfileDetail = contentInsights.audienceProfileDetail
+            report.audienceBehaviorDetail = contentInsights.audienceBehaviorDetail
           }
           send({ type: 'progress', value: 85 })
-          if (contentInsights?.contentSummary && contentInsights?.targetAudience) {
+          if (
+            contentInsights?.contentSummary &&
+            contentInsights?.audienceSegmentLabel &&
+            contentInsights?.audienceProfileDetail &&
+            contentInsights?.audienceBehaviorDetail
+          ) {
             try {
-              const similarSites = await findSimilarSites(
-                url,
-                contentInsights.contentSummary,
-                contentInsights.targetAudience
-              )
+              const similarSites = await findSimilarSites(url, contentInsights.contentSummary, {
+                audienceSegmentLabel: contentInsights.audienceSegmentLabel,
+                audienceProfileDetail: contentInsights.audienceProfileDetail,
+                audienceBehaviorDetail: contentInsights.audienceBehaviorDetail,
+              })
               if (similarSites?.length) report.similarSites = similarSites
             } catch (e) {
               console.warn('findSimilarSites failed:', e)

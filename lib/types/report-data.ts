@@ -28,7 +28,17 @@ export interface ReportData {
     requirementAlignment?: string
   }
   contentSummary?: string
+  /**
+   * 올드 리포트(IndexedDB·localStorage) 호환용. 신규 분석은 아래 audience* 필드만 채움.
+   * @deprecated
+   */
   targetAudience?: string
+  /** 한눈에 보는 대상 유형 (예: B2B SaaS 구매자) */
+  audienceSegmentLabel?: string
+  /** 연령·역할·산업 등 누가 읽는지 상세 */
+  audienceProfileDetail?: string
+  /** 방문 목적·정보 탐색·전환 맥락 */
+  audienceBehaviorDetail?: string
   similarSites?: Array<{ url: string; name?: string; matchReason?: string; fameReason?: string }>
   aiseo?: {
     overallScore?: number
