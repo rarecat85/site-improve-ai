@@ -76,7 +76,8 @@ export function filterLighthouseItemsByCategory(
     SEO: ['SEO'],
     접근성: ['접근성'],
     성능: ['성능'],
-    모범사례: ['모범 사례', '모범사례'],
+    /** Lighthouse `pwa` 카테고리 감사 — 개선안 생성에 포함 */
+    모범사례: ['모범 사례', '모범사례', 'PWA'],
   }
   const allowed = map[category] || []
   return items.filter((i) => allowed.some((c) => i.category === c))
@@ -101,16 +102,26 @@ export function buildAxeViolationSummaries(axeResults: any): AxeViolationSummary
   const violations = axeResults?.violations
   if (!Array.isArray(violations)) return []
 
-  return violations.map((v: any) => {
-    const firstNode = v.nodes?.[0]
-    let nodeSummary = ''
-    if (firstNode) {
-      if (firstNode.target?.length) {
-        nodeSummary = `선택자: ${firstNode.target[0]}`
-      } else if (typeof firstNode.html === 'string') {
-        nodeSummary = firstNode.html.length > 80 ? firstNode.html.slice(0, 80) + '...' : firstNode.html
-      }
+  function summarizeNode(node: any): string {
+    if (!node) return ''
+    if (node.target?.length) {
+      return `선택자: ${node.target[0]}`
     }
+    if (typeof node.html === 'string') {
+      return node.html.length > 80 ? node.html.slice(0, 80) + '...' : node.html
+    }
+    return ''
+  }
+
+  return violations.map((v: any) => {
+    const slice = (v.nodes || []).slice(0, 3)
+    const nodeLines = slice
+      .map((n: any, idx: number) => {
+        const s = summarizeNode(n)
+        return s ? `[${idx + 1}] ${s}` : ''
+      })
+      .filter(Boolean)
+    const nodeSummary = nodeLines.length ? nodeLines.join('\n  ') : ''
     return {
       id: v.id || 'unknown',
       impact: v.impact || 'unknown',
@@ -132,7 +143,7 @@ export function formatAxeSummaryForPrompt(summaries: AxeViolationSummary[]): str
   const limited = summaries.slice(0, MAX_AXE_ITEMS)
   const lines = limited.map(
     (s) =>
-      `- [${s.id}] ${s.help} (영향: ${s.impact}, ${s.nodeCount}개 노드)\n  설명: ${s.description}\n  ${s.nodeSummary ? `예시: ${s.nodeSummary}` : ''}\n  도움말: ${s.helpUrl || 'N/A'}`
+      `- [${s.id}] ${s.help} (영향: ${s.impact}, ${s.nodeCount}개 노드)\n  설명: ${s.description}\n  ${s.nodeSummary ? `예시 노드(최대 3개):\n  ${s.nodeSummary}` : ''}\n  도움말: ${s.helpUrl || 'N/A'}`
   )
   const suffix = summaries.length > MAX_AXE_ITEMS ? `\n... 외 ${summaries.length - MAX_AXE_ITEMS}건 위반` : ''
   return 'axe-core 접근성 위반:\n' + lines.join('\n\n') + suffix

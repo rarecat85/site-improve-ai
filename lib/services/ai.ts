@@ -7,9 +7,10 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
-import { computeDashboardGrades } from '@/lib/utils/grade-calculator'
+import { computeDashboardGrades, formatResponseMetaForPrompt } from '@/lib/utils/grade-calculator'
 import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
+import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
 import type {
   ArchitectureSectionSnippet,
   PageArchitectureSectionSummary,
@@ -442,6 +443,7 @@ function buildCategoryPromptContent(
   if (category === 'SEO') {
     const seoItems = filterLighthouseItemsByCategory(lighthouseItems, 'SEO')
     parts.push('\n### ' + formatLighthouseSummaryForPrompt(seoItems))
+    parts.push('\n### 구조화 데이터(JSON-LD) 요약\n' + extractJsonLdSummary(analysisResults.dom))
     return parts.join('\n')
   }
 
@@ -486,10 +488,12 @@ function getCategoryJsonRules(category: string): string {
 }
 
 const CATEGORY_FOCUS: Record<ReportCategory, string> = {
-  SEO: '크롤링·인덱싱, 메타·제목, 구조화 데이터, 링크·모바일 친화 스니펫. 키워드 나열이 아닌 **제공된 감사 항목** 기반.',
+  SEO: '크롤링·인덱싱, 메타·제목, 구조화 데이터(JSON-LD 요약 포함), 링크·모바일 친화 스니펫. 키워드 나열이 아닌 **제공된 감사·요약** 기반.',
   접근성: '키보드·스크린리더, 대비, 이름/라벨, 랜드마크. **axe·Lighthouse 접근성에 나온 항목**만.',
-  성능: 'LCP/CLS/TBT 등 **제공된 성능 감사**와 표시값. 일반적인 "속도 개선"만의 추상 항목 금지.',
-  모범사례: '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티 등 **제공된 모범사례 감사**.',
+  성능:
+    'LCP/CLS/TBT 등 **제공된 성능 감사**와 표시값. 일반적인 "속도 개선"만의 추상 항목 금지. 메타데이터에 **실사용자 지표(CrUX)**가 있으면 이번 Lighthouse(랩) 수치와 차이를 비교·언급하고, 우선 개선 근거를 드세요. CrUX가 없거나 미수집이면 랩만으로 설명.',
+  모범사례:
+    '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티, **PWA/설치 가능성** 등 **제공된 모범사례·PWA 감사** 및 위 **HTTP 응답 메타(보안 헤더 누락)**를 근거로 하세요.',
   'AEO/GEO': '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명.',
 }
 
@@ -593,6 +597,7 @@ export async function generateReport(
   const contextBlock = [
     formatPageStatsForPrompt(analysisResults.pageStats),
     formatCruxForPrompt(analysisResults.crux ?? null),
+    formatResponseMetaForPrompt(analysisResults.responseMeta),
   ].join('\n\n')
   const metaLines = [
     `페이지 제목: ${metadata.title ?? '없음'}`,

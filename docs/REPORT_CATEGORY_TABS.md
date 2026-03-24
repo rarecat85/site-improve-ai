@@ -38,9 +38,12 @@
 
 - **메타데이터**: 페이지 제목, 메타 설명, `h1~h3` 제목 나열  
 - **`formatPageStatsForPrompt`**: Puppeteer로 모은 페이지 통계(링크·이미지 등 요약)  
-- **`formatCruxForPrompt`**: Chrome UX Report가 있으면 실사용자 지표 요약, 없으면 안내 문구
+- **`formatCruxForPrompt`**: Chrome UX Report가 있으면 실사용자 지표 요약, 없으면 안내 문구  
+- **`formatResponseMetaForPrompt`**: 최초 요청 응답의 **최종 URL·HTTP 상태·보안 헤더(일부) 포함/누락** — 등급 계산과 동일 출처
 
 즉, 탭별로 **감사 원천 데이터는 다르지만**, “이 페이지가 어떤 페이지인지” 맥락은 공유됩니다.
+
+**SEO 전용 추가 블록**(`buildCategoryPromptContent`): 1차 `dom` HTML에서 **`extractJsonLdSummary`**로 JSON-LD 블록 개수·`@type` 샘플 요약을 붙입니다.
 
 ### 2.3 개선 항목 한 건의 필드
 
@@ -76,10 +79,10 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 
 | 카테고리 | 프롬프트에 넣는 분석 데이터 (`buildCategoryPromptContent`) | 프롬프트 초점 (`CATEGORY_FOCUS`) |
 |----------|------------------------------------------------------------|-----------------------------------|
-| **SEO** | Lighthouse 요약 중 **카테고리 라벨이 SEO** 인 감사만 (`filterLighthouseItemsByCategory`) | 크롤링·인덱싱, 메타·제목, 구조화 데이터, 링크·모바일 스니펫. **제공된 감사 항목** 기반. |
-| **접근성** | Lighthouse **접근성** 감사 + **axe-core** 위반 요약 (`formatAxeSummaryForPrompt`) | 키보드·스크린리더, 대비, 이름/라벨, 랜드마크. **axe·Lighthouse 접근성**에 나온 항목만. |
-| **성능** | Lighthouse **성능** 감사만 | LCP/CLS/TBT 등 **제공된 성능 감사**와 수치. 추상적인 “속도 개선”만의 항목은 지양. |
-| **모범사례** | Lighthouse **모범 사례** 감사만 | 보안 헤더, HTTPS, 서드파티 등 **제공된 모범사례 감사**. |
+| **SEO** | Lighthouse 요약 중 **카테고리 라벨이 SEO** 인 감사만 + **JSON-LD 요약** (`extractJsonLdSummary` · `dom`) | 크롤링·인덱싱, 메타·제목, 구조화 데이터(JSON-LD 요약 포함), 링크·모바일 스니펫. **제공된 감사·요약** 기반. |
+| **접근성** | Lighthouse **접근성** 감사 + **axe-core** 위반 요약 (`formatAxeSummaryForPrompt`) — 위반당 **예시 노드 최대 3개** | 키보드·스크린리더, 대비, 이름/라벨, 랜드마크. **axe·Lighthouse 접근성**에 나온 항목만. |
+| **성능** | Lighthouse **성능** 감사만 | LCP/CLS/TBT 등 **제공된 성능 감사**와 수치. `metaLines`에 CrUX가 있으면 **랩(이번 Lighthouse)과 실사용자 지표를 비교·근거**하도록 지시. |
+| **모범사례** | Lighthouse **모범 사례** + **PWA** 라벨 감사 (`filterLighthouseItemsByCategory`에 PWA 포함) | 보안 헤더·HTTPS·서드파티·**PWA/설치 가능성** 등 **제공된 감사** 및 공통 **HTTP 응답 메타**. |
 | **AEO/GEO** | **aiseo-audit** 결과 문자열 (`formatAiseoSummaryForPrompt`) | aiseo **점수·권장만**. 인용·구조화·엔티티 설명. |
 
 공통 제약(프롬프트): **Lighthouse/axe/aiseo 목록에 없는 이슈를 지어내지 말 것**, `source`는 `Lighthouse · …`, `axe-core · …`, `aiseo-audit · …` 형태 권장.
@@ -87,7 +90,7 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 ### 4.1 Lighthouse 요약이 만들어지는 방식 (`buildLighthouseSummary`)
 
 - LHR에서 **감사 점수가 1 미만이거나 null** 인 항목만 “개선 필요”로 넣습니다.  
-- 카테고리별 전담 시 `filterLighthouseItemsByCategory`로 **SEO / 접근성 / 성능 / 모범 사례** 라벨만 골라 넣습니다.
+- 카테고리별 전담 시 `filterLighthouseItemsByCategory`로 라벨을 골라 넣습니다: **SEO / 접근성 / 성능 / 모범 사례** 및 **PWA**(PWA는 **모범사례** 전담 프롬프트에만 포함).
 
 ---
 
@@ -128,6 +131,8 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 | `app/report/ReportView.tsx` | 탭 정의, `getCategory`, 항목 필터, AEO/GEO 전용 블록 |
 | `lib/services/ai.ts` | `generateReport`, `generateReportForCategory`, `REPORT_CATEGORIES`, `CATEGORY_FOCUS`, `normalizeCategory` |
 | `lib/utils/analysis-summary.ts` | Lighthouse/axe/aiseo 프롬프트용 문자열 |
+| `lib/utils/json-ld-snippet.ts` | SEO 프롬프트용 JSON-LD 요약 |
+| `lib/utils/grade-calculator.ts` | `formatResponseMetaForPrompt` 등 |
 | `lib/types/report-data.ts` | `ReportImprovement`, `ReportData` |
 
 코드와 문서가 다르면 **코드가 우선**입니다.

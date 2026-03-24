@@ -69,6 +69,24 @@ export function extractResponseMeta(response: any): ResponseMetaSummary | null {
   }
 }
 
+/** 리포트 LLM 메타 블록 — 등급 계산과 동일한 출처 */
+export function formatResponseMetaForPrompt(m: ResponseMetaSummary | null | undefined): string {
+  if (!m) return 'HTTP/응답 메타: 네비게이션 응답 없음 또는 미수집'
+  const url = m.finalUrl ?? '(알 수 없음)'
+  const st = m.httpStatus != null ? String(m.httpStatus) : '(알 수 없음)'
+  const pres = m.securityHeadersPresent.length
+    ? m.securityHeadersPresent.join(', ')
+    : '없음'
+  const miss = m.securityHeadersMissing.length ? m.securityHeadersMissing.join(', ') : '없음'
+  return [
+    '최초 요청에 대한 응답 메타(보안 헤더 일부만 검사):',
+    `- 최종 URL: ${url}`,
+    `- HTTP 상태 코드: ${st}`,
+    `- 응답에 포함된 보안 관련 헤더: ${pres}`,
+    `- 위 목록에서 누락된 일반 보안 헤더: ${miss}`,
+  ].join('\n')
+}
+
 function lhScore(cat: any): number | null {
   const s = cat?.score
   if (typeof s !== 'number' || Number.isNaN(s)) return null
