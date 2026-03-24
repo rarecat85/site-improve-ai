@@ -459,14 +459,6 @@ export default function Home() {
           <button type="submit" disabled={loading || mode === 'comparison'} className={styles.cta}>
             {mode === 'comparison' ? 'Coming soon' : loading ? 'Analyzing...' : 'START ANALYSIS'}
           </button>
-          <p className={styles.previewLink}>
-            <a href="/report?preview=1" target="_blank" rel="noopener noreferrer">결과 페이지 미리보기</a>
-            {' · '}
-            <a href="/loading-preview" target="_blank" rel="noopener noreferrer">로딩 미리보기</a>
-            {' · '}
-            <a href="/error-preview" target="_blank" rel="noopener noreferrer">에러 화면 미리보기</a>
-            — 화면 확인·수정 후 반영용
-          </p>
         </form>
 
         {result && (

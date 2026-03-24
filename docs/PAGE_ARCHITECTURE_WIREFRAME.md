@@ -137,6 +137,7 @@
 - **Visual Architecture**: `pageArchitecture.rows`로 격자를 그림(칸 라벨 표시).
 - **Section Summaries**: `pageArchitecture.sections`를 와이어프레임 행 순서에 맞춰 정렬해 카드로 표시.  
   AI가 전부 제외해 섹션이 비면, UI에 **안내 문구**가 나올 수 있음(와이어프레임 격자는 그대로).
+- 카드 우측 상단 **`metricLabel` / `metricScore` 의미·산정·폴백**은 **[SECTION_SUMMARY_METRICS.md](./SECTION_SUMMARY_METRICS.md)** 에 정리함.
 
 ---
 

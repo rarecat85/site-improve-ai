@@ -333,21 +333,6 @@
   transform: none;
 }
 
-.previewLink {
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  color: var(--app-text-secondary);
-}
-
-.previewLink a {
-  color: var(--app-point);
-  text-decoration: none;
-}
-
-.previewLink a:hover {
-  text-decoration: underline;
-}
-
 /* Result */
 .result {
   margin-top: 1.5rem;
