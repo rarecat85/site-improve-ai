@@ -462,6 +462,25 @@ function buildCategoryPromptContent(
   return parts.join('\n')
 }
 
+/**
+ * 카테고리 공통: 우선순위·피드백 품질 원칙 (전문 컨설턴트·역할 기반 에이전트에서 흔히 쓰는 기준을 요약; 외부 프롬프트 원문을 복사하지 않음).
+ */
+function getSharedReportQualityRules(): string {
+  return `
+**우선순위 (priority + priorityReason)**
+- **high**: 실사용자·검색 노출·보안·접근에 **광범위하거나 즉각적**인 영향이 예상되거나, 사용자 요구사항과 **직접** 맞닿은 미충족, 또는 제공 데이터에서 **심각도가 분명히 높은** 감사·위반(점수 매우 낮음, 차단적 접근성 이슈 등)일 때.
+- **medium**: 중요하나 범위가 한정되거나 대응 경로가 비교적 명확할 때.
+- **low**: 개선 여지는 있으나 당장 전환·노출·차단을 막지 않거나 영향이 제한적일 때.
+- **본문(<main>·페이지 주요 콘텐츠 영역) 우선 타이브레이커**: 위 심각도·영향이 **비슷한** 두 항목을 비교할 때, 수정이 **\`<main>\` 또는 본문 마크업·카피·본문 내 미디어/컴포넌트**에서 끝나는 쪽에 **더 높은 priority**(또는 같은 등급 안에서 상대적으로 앞에 둘 만한 이유)를 부여하세요. 반면 **전역 크롬(공통 헤더·푸터)·순수 \`<head>\`만·HTTP 헤더·빌드·CDN·서드파티 정책** 위주 조치는 동급이면 한 단계 **낮게** 잡아도 됩니다. 단, **차단적 보안·접근성·노출 이슈**는 위치와 관계없이 심각도를 최우선으로 하세요.
+- **priorityReason**에는 위 기준 중 무엇에 해당하는지, **가능하면 감사명·수치·위반 유형**을 한 어구라도 넣을 것. 본문 우선으로 올리거나 크롬 쪽을 낮춘 경우 **그 판단**(예: "본문 LCP 요소")을 한 어구 넣을 것 (근거 없는 단정 금지).
+
+**피드백·설명 품질**
+- **description**: "개선하세요" 등 **추상 한 줄** 금지. **무엇을** 어디에 적용할지, **왜**(어떤 감사·데이터 때문인지), **다음 한 단계**가 무엇인지 **짧은 단계**로.
+- **impact**: 이 카테고리 관점에서 **사용자 또는 비즈니스에 어떤 변화가 기대되는지** 한 문장으로 구체화. 데이터에 수치가 있으면 반영.
+- **difficulty**: 마크업·CMS만으로 되는지, 빌드·헤더·인프라까지 건드리는지 **솔직히** 평가.
+`
+}
+
 function getCategoryJsonRules(category: string): string {
   return `
 **필수 규칙**
@@ -469,17 +488,19 @@ function getCategoryJsonRules(category: string): string {
 - title: **한국어**, 구체적이고 짧게 (예: "LCP 이미지 우선순위 지정"). 일반론 한 줄 제목 금지.
 - matchesRequirement: 사용자 요구사항 문구와 **직접** 연결되면 true, 그 외 false
 - requirementRelevance: 한 문장, 한국어 (왜 요구사항과 관련 있는지 또는 없는지)
-- priority: high | medium | low (사용자 영향·이슈 심각도 기준)
-- priorityReason: 한 문장, 한국어
-- impact: 높음 | 중간 | 낮음 — 사용자·비즈니스 관점
-- difficulty: 쉬움 | 보통 | 어려움 — 구현 난이도
+- priority: high | medium | low — 아래 **우선순위 기준**을 따를 것.
+- priorityReason: 한 문장, 한국어 (우선순위 기준 + 가능한 경우 근거 언급)
+- impact: 높음 | 중간 | 낮음 — 사용자·비즈니스 관점, **피드백 품질** 지침 준수
+- difficulty: 쉬움 | 보통 | 어려움 — 구현 난이도, 과소·과대 평가 금지
 - description: 한국어, **실행 가능한** 수정 단계. 위 분석 데이터에 근거할 것.
 - codeExample: HTML/CSS/메타/헤더 예시 등 가능하면 문자열로. 없으면 빈 문자열 "". 마크다운 코드펜스(\`\`\`) 사용 금지.
 - source: 반드시 아래 중 하나에 맞출 것 — "Lighthouse · 감사제목 또는 ID", "axe-core · 규칙ID", "aiseo-audit · …". **위에 없는 감사를 지어내지 말 것.**
 
+${getSharedReportQualityRules()}
 **금지**
 - 제공된 Lighthouse/axe/aiseo 목록에 없는 이슈를 새로 만들어내기
 - 동일 원인의 중복 항목 — 필요하면 하나로 합쳐 설명에 병합
+- 근거 없는 "중요하다/급하다"만 반복하기
 
 응답: JSON만 (설명·마크다운 없음).
 {"improvements":[{"title":"...","category":"${category}","priority":"high|medium|low","impact":"높음|중간|낮음","difficulty":"쉬움|보통|어려움","description":"...","codeExample":"...","source":"...","matchesRequirement":true|false,"requirementRelevance":"...","priorityReason":"..."}]}
@@ -488,13 +509,16 @@ function getCategoryJsonRules(category: string): string {
 }
 
 const CATEGORY_FOCUS: Record<ReportCategory, string> = {
-  SEO: '크롤링·인덱싱, 메타·제목, 구조화 데이터(JSON-LD 요약 포함), 링크·모바일 친화 스니펫. 키워드 나열이 아닌 **제공된 감사·요약** 기반.',
-  접근성: '키보드·스크린리더, 대비, 이름/라벨, 랜드마크. **axe·Lighthouse 접근성에 나온 항목**만.',
+  SEO:
+    '크롤링·인덱싱, 메타·제목, 구조화 데이터(JSON-LD 요약 포함), 링크·모바일 친화 스니펫. **제공된 감사·요약**만 근거로 하고, 키워드 밀도·추측성 SEO 조언 금지. 우선순위는 색인·스니펫·구조화 노출 등 **측정 가능한 사용자·검색 영향**이 큰 항목을 앞에.',
+  접근성:
+    '키보드·스크린리더, 대비, 이름/라벨, 랜드마크·포커스. **axe·Lighthouse 접근성에 나온 항목만**. 위반별로 **실제 사용자 차단(동작 불가, 의미 전달 실패)**에 가까울수록 priority를 높게.',
   성능:
-    'LCP/CLS/TBT 등 **제공된 성능 감사**와 표시값. 일반적인 "속도 개선"만의 추상 항목 금지. 메타데이터에 **실사용자 지표(CrUX)**가 있으면 이번 Lighthouse(랩) 수치와 차이를 비교·언급하고, 우선 개선 근거를 드세요. CrUX가 없거나 미수집이면 랩만으로 설명.',
+    'LCP/CLS/TBT 등 **제공된 성능 감사**와 표시값. 일반적인 "속도 개선"만의 추상 항목 금지. 메타데이터에 **실사용자 지표(CrUX)**가 있으면 이번 Lighthouse(랩) 수치와 차이를 비교·언급하고, 우선 개선 근거를 드세요. CrUX가 없거나 미수집이면 랩만으로 설명. **핵심 지표 개선에 직결되는 감사**를 우선순위 상단에.',
   모범사례:
-    '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티, **PWA/설치 가능성** 등 **제공된 모범사례·PWA 감사** 및 위 **HTTP 응답 메타(보안 헤더 누락)**를 근거로 하세요.',
-  'AEO/GEO': '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명.',
+    '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티, **PWA/설치 가능성** 등 **제공된 모범사례·PWA 감사** 및 위 **HTTP 응답 메타(보안 헤더 누락)**를 근거로 하세요. **보안·신뢰에 직접적인 누락**은 우선순위를 높게.',
+  'AEO/GEO':
+    '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명. **점수나 권장 텍스트와의 연결**을 description·priorityReason에 드러낼 것.',
 }
 
 /** 카테고리 1개에 대해 AI 호출 후 improvements 배열만 반환 */
@@ -506,14 +530,14 @@ async function generateReportForCategory(
 ): Promise<any[]> {
   const content = buildCategoryPromptContent(category, analysisResults, metaLines)
   const focus = CATEGORY_FOCUS[category]
-  const prompt = `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용.
+  const prompt = `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
 
 ## 이 카테고리 초점
 ${focus}
 
 ## 사용자 요구사항
 ${requirement}
-요구사항에 명시된 관심 영역과 직접 맞닿은 항목에 matchesRequirement=true 를 우선 부여하세요.
+요구사항에 명시된 관심 영역과 직접 맞닿은 항목에 matchesRequirement=true 를 우선 부여하고, **우선순위(priority)** 를 매길 때도 동일 영역이면 한 단계 유리하게 검토하세요.
 
 ## 실제 분석 결과 (유일한 근거 — 아래에 없는 Lighthouse/axe 이슈는 만들지 말 것)
 ${content}
@@ -521,6 +545,7 @@ ${content}
 지침:
 - 위 블록에 **나열된** 감사·위반만 개선안으로 옮기세요. 목록이 비어 있거나 "없음"이면 improvements는 [] 이거나, 데이터에 근거한 1건 이하만.
 - 항목 수는 품질 우선 (불필요한 중복·일반론 금지).
+- **우선순위는 영향 범위·심각도·요구사항 부합**을 종합해 일관되게 매기고, **심각도가 비슷하면 \`<main>\`/본문에서 고칠 수 있는 항목을 더 높게** 잡으세요. 각 항목의 priorityReason에 그 판단 근거를 남기세요.
 - 배경 설명·서론 없이 JSON만.
 
 ${getCategoryJsonRules(category)}`
@@ -643,7 +668,8 @@ export async function generateReport(
       highPriority: allImprovements.filter((i) => i.priority === 'high').length,
       byCategory,
       estimatedImpact: '요구사항에 따른 개선 효과 기대',
-      priorityCriteria: '요구사항에 맞는 항목을 우선 추천하고, 기본 분석 항목도 모두 포함했습니다.',
+      priorityCriteria:
+        '요구사항 부합 항목을 먼저 두고, 영향·심각도·데이터 근거에 따라 high/medium/low를 매겼습니다. 비슷한 심각도에서는 본문(<main>)·주 콘텐츠에서 해결 가능한 항목을 상대적으로 우선했습니다. 기본 분석(요구사항 외) 항목도 포함했습니다.',
       requirementAlignment: `요구사항 부합 ${allImprovements.filter((i) => i.matchesRequirement).length}건, 기본 분석 ${allImprovements.filter((i) => !i.matchesRequirement).length}건 포함.`,
     }
 
