@@ -1,14 +1,19 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AppModal } from '@/app/components/ui/AppModal'
 import { useChromeNavVisibility } from '@/app/components/shell/chrome-nav-visibility'
-import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
+import {
+  REPORT_OPEN_META_SESSION_KEY,
+  REPORT_RESTORE_DOM_EVENT,
+  type ReportOpenMeta,
+} from '@/lib/constants/report-session'
 import {
   deleteReportSnapshotById,
   loadReportPayloadFromIdb,
+  loadReportPayloadFromIdbBySnapshotId,
   saveReportPayloadToIdb,
 } from '@/lib/storage/site-improve-report-idb'
 import { MOCK_REPORT_PREVIEW, PREVIEW_REQUIREMENT_TEXT } from '@/lib/mocks/report-preview-data'
@@ -97,23 +102,23 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     setHideHamburger(hide)
   }, [loadReady, reportData, setHideHamburger])
 
+  const applyStoredPayload = useCallback((parsed: unknown): boolean => {
+    if (!parsed || typeof parsed !== 'object') return false
+    const o = parsed as Record<string, unknown>
+    const r = o.report as ReportData | undefined
+    if (!r?.improvements) return false
+    setReportData(r)
+    if (typeof o.url === 'string') setUrl(o.url)
+    if (typeof o.requirement === 'string') setRequirement(o.requirement)
+    if (Array.isArray(o.priorities)) setPriorities(o.priorities.map(String))
+    else setPriorities([])
+    return true
+  }, [])
+
   useEffect(() => {
     if (initialPreview) return
 
     let cancelled = false
-
-    const applyParsed = (parsed: unknown): boolean => {
-      if (!parsed || typeof parsed !== 'object') return false
-      const o = parsed as Record<string, unknown>
-      const r = o.report as ReportData | undefined
-      if (!r?.improvements) return false
-      setReportData(r)
-      if (typeof o.url === 'string') setUrl(o.url)
-      if (typeof o.requirement === 'string') setRequirement(o.requirement)
-      if (Array.isArray(o.priorities)) setPriorities(o.priorities.map(String))
-      else setPriorities([])
-      return true
-    }
 
     ;(async () => {
       try {
@@ -135,7 +140,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
           const stored = localStorage.getItem('site-improve-report')
           if (stored) {
             const parsed = JSON.parse(stored)
-            if (!cancelled && applyParsed(parsed)) return
+            if (!cancelled && applyStoredPayload(parsed)) return
           }
         } catch (e) {
           console.error('Failed to read report from localStorage:', e)
@@ -143,7 +148,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
 
         try {
           const idb = await loadReportPayloadFromIdb()
-          if (!cancelled && idb && applyParsed(idb)) return
+          if (!cancelled && idb && applyStoredPayload(idb)) return
         } catch (e) {
           console.error('Failed to read report from IndexedDB:', e)
         }
@@ -171,7 +176,56 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     return () => {
       cancelled = true
     }
-  }, [initialPreview])
+  }, [initialPreview, applyStoredPayload])
+
+  useEffect(() => {
+    if (initialPreview) return
+    const onRestore = async (e: Event) => {
+      const ce = e as CustomEvent<{ snapshotId?: string }>
+      const snapshotId = ce.detail?.snapshotId
+      if (!snapshotId) return
+      setIsPreview(false)
+      let ok = false
+      try {
+        const stored = localStorage.getItem('site-improve-report')
+        if (stored) {
+          try {
+            ok = applyStoredPayload(JSON.parse(stored))
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!ok) {
+        try {
+          const payload = await loadReportPayloadFromIdbBySnapshotId(snapshotId)
+          if (payload && applyStoredPayload(payload)) {
+            ok = true
+            try {
+              localStorage.setItem('site-improve-report', JSON.stringify(payload))
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch (err) {
+          console.error('Menu restore: IDB load failed', err)
+        }
+      }
+      if (ok) {
+        setOpenMeta(readReportOpenMeta())
+        setActiveTab('all')
+        try {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    window.addEventListener(REPORT_RESTORE_DOM_EVENT, onRestore as EventListener)
+    return () => window.removeEventListener(REPORT_RESTORE_DOM_EVENT, onRestore as EventListener)
+  }, [initialPreview, applyStoredPayload])
 
   const requestDeleteConfirm = () => {
     if (!reportData || isPreview) return

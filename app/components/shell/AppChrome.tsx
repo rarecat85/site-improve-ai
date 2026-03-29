@@ -1,8 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
+import { usePathname, useRouter } from 'next/navigation'
+import { AppModal } from '@/app/components/ui/AppModal'
+import {
+  REPORT_OPEN_META_SESSION_KEY,
+  REPORT_RESTORE_DOM_EVENT,
+  type ReportOpenMeta,
+  type ReportRestoreEventDetail,
+} from '@/lib/constants/report-session'
 import {
   listReportSnapshotMetaFromIdb,
   loadReportPayloadFromIdbBySnapshotId,
@@ -40,9 +46,21 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
   )
 }
 
+function readReportOpenMetaFromSession(): ReportOpenMeta {
+  if (typeof window === 'undefined') return { source: 'analyze' }
+  try {
+    const raw = sessionStorage.getItem(REPORT_OPEN_META_SESSION_KEY)
+    if (raw) return JSON.parse(raw) as ReportOpenMeta
+  } catch {
+    /* ignore */
+  }
+  return { source: 'analyze' }
+}
+
 function AppChromeInner({ children }: { children: React.ReactNode }) {
   const { hideHamburger } = useChromeNavVisibility()
   const router = useRouter()
+  const pathname = usePathname()
   const navId = useId()
   const panelId = `${navId}-panel`
   const [navOpen, setNavOpen] = useState(false)
@@ -54,6 +72,8 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
   >([])
   const [listLoading, setListLoading] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [unsavedSwitchModal, setUnsavedSwitchModal] = useState<{ snapshotId: string } | null>(null)
+  const [snapshotRestoreBusy, setSnapshotRestoreBusy] = useState(false)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
   const openBtnRef = useRef<HTMLButtonElement>(null)
 
@@ -83,6 +103,10 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
   }, [navOpen, refreshSnapshots])
 
   useEffect(() => {
+    if (pathname !== '/report') setUnsavedSwitchModal(null)
+  }, [pathname])
+
+  useEffect(() => {
     if (hideHamburger) {
       setNavOpen(false)
     }
@@ -106,23 +130,23 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
     openBtnRef.current?.focus()
   }
 
-  const onPickSnapshot = async (id: string) => {
+  const applySnapshotRestore = async (id: string): Promise<boolean> => {
     setRestoreError(null)
     let payload: StoredReportPayload | null = null
     try {
       payload = await loadReportPayloadFromIdbBySnapshotId(id)
     } catch {
       setRestoreError('리포트를 불러오지 못했습니다.')
-      return
+      return false
     }
     if (!payload) {
       setRestoreError('해당 저장 항목을 열 수 없습니다.')
-      return
+      return false
     }
     const report = payload.report as { improvements?: unknown } | null
     if (!report || !Array.isArray(report.improvements)) {
       setRestoreError('저장된 데이터 형식이 올바르지 않습니다.')
-      return
+      return false
     }
     try {
       localStorage.setItem('site-improve-report', JSON.stringify(payload))
@@ -140,8 +164,48 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
+    const onReportPage = typeof window !== 'undefined' && window.location.pathname === '/report'
+    if (onReportPage) {
+      window.dispatchEvent(
+        new CustomEvent<ReportRestoreEventDetail>(REPORT_RESTORE_DOM_EVENT, {
+          detail: { snapshotId: id },
+        })
+      )
+    } else {
+      router.push('/report')
+    }
     closeNav()
-    router.push('/report')
+    return true
+  }
+
+  const onPickSnapshot = async (id: string) => {
+    if (pathname === '/report' && readReportOpenMetaFromSession().source === 'analyze') {
+      setUnsavedSwitchModal({ snapshotId: id })
+      return
+    }
+    setSnapshotRestoreBusy(true)
+    try {
+      await applySnapshotRestore(id)
+    } finally {
+      setSnapshotRestoreBusy(false)
+    }
+  }
+
+  const closeUnsavedSwitchModal = () => {
+    if (snapshotRestoreBusy) return
+    setUnsavedSwitchModal(null)
+  }
+
+  const confirmUnsavedSwitch = async () => {
+    const id = unsavedSwitchModal?.snapshotId
+    if (!id) return
+    setSnapshotRestoreBusy(true)
+    try {
+      const ok = await applySnapshotRestore(id)
+      if (ok) setUnsavedSwitchModal(null)
+    } finally {
+      setSnapshotRestoreBusy(false)
+    }
   }
 
   const formatSavedAt = (ms: number) => {
@@ -252,6 +316,7 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
                         <button
                           type="button"
                           className={styles.savedItem}
+                          disabled={snapshotRestoreBusy}
                           onClick={() => void onPickSnapshot(item.id)}
                         >
                           <span className={styles.savedItemUrl}>{item.url || '(URL 없음)'}</span>
@@ -271,6 +336,33 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       ) : null}
+
+      <AppModal
+        open={unsavedSwitchModal !== null}
+        title="저장되지 않은 결과가 있습니다"
+        onClose={closeUnsavedSwitchModal}
+        description={
+          <p>
+            지금 보고 있는 분석은 아직 「결과 저장」으로 보관하지 않았습니다. 다른 저장 항목을 열면 화면이 바뀌며,
+            이 세션에서 현재 내용으로 되돌리기 어려울 수 있습니다. 계속할까요?
+          </p>
+        }
+        actions={[
+          {
+            label: '취소',
+            variant: 'ghost',
+            disabled: snapshotRestoreBusy,
+            onClick: closeUnsavedSwitchModal,
+          },
+          {
+            label: '다른 결과 열기',
+            variant: 'primary',
+            disabled: snapshotRestoreBusy,
+            autoFocus: true,
+            onClick: () => void confirmUnsavedSwitch(),
+          },
+        ]}
+      />
     </div>
   )
 }
