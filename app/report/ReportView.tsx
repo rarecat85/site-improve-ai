@@ -18,10 +18,9 @@ import {
 } from '@/lib/storage/site-improve-report-idb'
 import { MOCK_REPORT_PREVIEW, PREVIEW_REQUIREMENT_TEXT } from '@/lib/mocks/report-preview-data'
 import type { ReportData, ReportImprovement as Improvement } from '@/lib/types/report-data'
+import { CATEGORY_ORDER, getImprovementCategory } from '@/lib/utils/report-improvement-category'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
 import styles from './report.module.css'
-
-const CATEGORY_ORDER = ['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO'] as const
 
 /** 탭 ID: 전체 요약 + 항목별 (SEO, GEO/AEO, 접근성 등) */
 const TAB_IDS = ['all', ...CATEGORY_ORDER, '기타'] as const
@@ -46,18 +45,6 @@ const TAB_LABELS: Record<string, string> = {
   '모범사례': 'Best Practices',
   'UX/UI': 'UX/UI',
   '기타': 'Other',
-}
-
-function getCategory(item: Improvement): string {
-  const c = (item.category || '').trim()
-  if (CATEGORY_ORDER.includes(c as any)) return c
-  const s = (item.source || '').toLowerCase()
-  if (s.includes('aiseo') || s.includes('aeo') || s.includes('geo')) return 'AEO/GEO'
-  if (s.includes('seo')) return 'SEO'
-  if (s.includes('접근성') || s.includes('axe-core') || s.includes('accessibility')) return '접근성'
-  if (s.includes('성능') || s.includes('performance')) return '성능'
-  if (s.includes('모범') || s.includes('best-practice')) return '모범사례'
-  return c || 'UX/UI'
 }
 
 type ReportViewProps = {
@@ -307,10 +294,10 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
 
   // 항목별 그룹 (표준 순서 유지)
   const byCategory = reportData.summary.byCategory ?? CATEGORY_ORDER.reduce((acc, key) => {
-    acc[key] = reportData.improvements.filter(i => getCategory(i) === key).length
+    acc[key] = reportData.improvements.filter(i => getImprovementCategory(i) === key).length
     return acc
   }, {} as Record<string, number>)
-  const otherCount = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getCategory(i) as any)).length
+  const otherCount = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getImprovementCategory(i) as any)).length
   if (otherCount > 0) byCategory['기타'] = otherCount
 
   // 항목별 그룹 시, 요구사항 부합(matchesRequirement) 항목을 먼저, 그다음 우선순위(high→medium→low) 순으로 정렬
@@ -322,12 +309,12 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
   }
   const groupedImprovements = CATEGORY_ORDER.reduce((acc, cat) => {
-    const items = reportData.improvements.filter(i => getCategory(i) === cat).sort(sortByRecommendation)
+    const items = reportData.improvements.filter(i => getImprovementCategory(i) === cat).sort(sortByRecommendation)
     if (items.length) acc.push({ category: cat, items })
     return acc
   }, [] as { category: string; items: Improvement[] }[])
   // 기타(표준 외) 항목
-  const others = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getCategory(i) as any)).sort(sortByRecommendation)
+  const others = reportData.improvements.filter(i => !CATEGORY_ORDER.includes(getImprovementCategory(i) as any)).sort(sortByRecommendation)
   if (others.length) groupedImprovements.push({ category: '기타', items: others })
 
   // 탭 목록: 전체 요약 + 항목별(건수 > 0인 것만). AEO/GEO는 aiseo 데이터가 있으면 항상 표시
@@ -755,6 +742,15 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                     : '결과 저장'}
             </button>
           ))}
+        {openMeta.fromCompare ? (
+          <Link
+            href="/compare"
+            className={`${styles.reportFooterBtn} ${styles.reportFooterBtnSecondary}`}
+            aria-label="비교 결과 화면으로 이동"
+          >
+            비교 결과로
+          </Link>
+        ) : null}
         <Link
           href="/"
           className={`${styles.reportFooterBtn} ${styles.reportFooterBtnSecondary}`}
@@ -767,7 +763,9 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
             ? '미리보기 화면입니다. 실제 분석 결과가 아닙니다.'
             : openMeta.source === 'restore'
               ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
-              : '결과 저장은 이 브라우저의 IndexedDB에 보관됩니다. 저장할 때마다 별도 항목으로 쌓이며, 메뉴에서 항목별로 열거나 삭제할 수 있습니다. 같은 호스트·포트(예: localhost:3000)로 열어야 목록이 이어집니다. 다른 기기·시크릿 창·포트가 다르면 목록이 비어 보일 수 있습니다.'}
+              : openMeta.fromCompare
+                ? '비교 분석에서 연 상세 화면입니다. 아래 「비교 결과로」에서 요약 화면으로 돌아갈 수 있습니다. 결과 저장은 이 브라우저의 IndexedDB에 보관됩니다.'
+                : '결과 저장은 이 브라우저의 IndexedDB에 보관됩니다. 저장할 때마다 별도 항목으로 쌓이며, 메뉴에서 항목별로 열거나 삭제할 수 있습니다. 같은 호스트·포트(예: localhost:3000)로 열어야 목록이 이어집니다. 다른 기기·시크릿 창·포트가 다르면 목록이 비어 보일 수 있습니다.'}
         </p>
       </footer>
     </div>

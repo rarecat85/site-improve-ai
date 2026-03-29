@@ -13,7 +13,12 @@ import {
 } from '@/lib/analysis-loading-messages'
 import { AppModal } from '@/app/components/ui/AppModal'
 import uiModalStyles from '@/app/components/ui/app-modal.module.css'
+import {
+  COMPARE_SESSION_STORAGE_KEY,
+  type CompareSessionV1,
+} from '@/lib/constants/compare-session'
 import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
+import { fetchAnalyzeReportStream } from '@/lib/services/fetch-analyze-report-stream'
 import {
   listSnapshotMetasMatchingUrl,
   loadReportPayloadFromIdbBySnapshotId,
@@ -73,6 +78,8 @@ export default function Home() {
   const [savedUrlModalBusy, setSavedUrlModalBusy] = useState(false)
   const [savedUrlModalError, setSavedUrlModalError] = useState<string | null>(null)
   const [emptyUrlModalOpen, setEmptyUrlModalOpen] = useState(false)
+  const [compareUrlsModal, setCompareUrlsModal] = useState(false)
+  const [compareSameUrlModal, setCompareSameUrlModal] = useState(false)
   const messageTickRef = useRef(0)
   const urlInputRef = useRef<HTMLInputElement>(null)
 
@@ -232,6 +239,61 @@ export default function Home() {
     }
   }
 
+  const runComparison = async (trimmedA: string, trimmedB: string) => {
+    setLoading(true)
+    setResult(null)
+    setAnalysisError(null)
+    setProgress(0)
+    let navigated = false
+    const reqLine = buildReportRequirementLine(priorities)
+
+    try {
+      const reportA = await fetchAnalyzeReportStream(trimmedA, priorities, {
+        onStreamProgress: (v) => setProgress(Math.round(v * 0.5)),
+      })
+      setProgress(50)
+      const reportB = await fetchAnalyzeReportStream(trimmedB, priorities, {
+        onStreamProgress: (v) => setProgress(50 + Math.round(v * 0.5)),
+      })
+      setProgress(100)
+
+      const session: CompareSessionV1 = {
+        v: 1,
+        requirement: reqLine,
+        priorities: [...priorities],
+        createdAt: Date.now(),
+        a: { report: reportA, url: trimmedA, requirement: reqLine, priorities },
+        b: { report: reportB, url: trimmedB, requirement: reqLine, priorities },
+      }
+      try {
+        sessionStorage.setItem(COMPARE_SESSION_STORAGE_KEY, JSON.stringify(session))
+      } catch {
+        setAnalysisError({
+          message:
+            '비교 결과를 브라우저 세션에 저장할 수 없습니다. 저장 공간·사생활 보호 설정을 확인해 주세요.',
+          statusCode: 507,
+        })
+        return
+      }
+      if (messageTickRef.current < MANDATORY_PRE_NAV_MESSAGE_INDEX) {
+        setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+        await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
+        setLoadingSubtextOverride(null)
+      }
+      navigated = true
+      router.push('/compare')
+    } catch (error) {
+      console.error('Compare analysis error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      setAnalysisError({
+        message: errorMessage,
+        statusCode: 500,
+      })
+    } finally {
+      if (!navigated) setLoading(false)
+    }
+  }
+
   const closeSavedUrlModal = () => {
     if (savedUrlModalBusy) return
     setSavedUrlModal(null)
@@ -277,7 +339,21 @@ export default function Home() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (mode === 'comparison') return
+    if (mode === 'comparison') {
+      const trimmedA = url.trim()
+      const trimmedB = url2.trim()
+      if (!trimmedA || !trimmedB) {
+        setCompareUrlsModal(true)
+        return
+      }
+      if (trimmedA === trimmedB) {
+        setCompareSameUrlModal(true)
+        return
+      }
+      await runComparison(trimmedA, trimmedB)
+      return
+    }
+
     const trimmedUrl = url.trim()
     if (!trimmedUrl) {
       setEmptyUrlModalOpen(true)
@@ -298,11 +374,18 @@ export default function Home() {
     await runAnalysis(trimmedUrl)
   }
 
+  const comparisonLoadingHint =
+    mode === 'comparison' && loading && !loadingSubtextOverride
+      ? progress < 50
+        ? '첫 번째 URL 분석 중… (전체의 약 절반)'
+        : '두 번째 URL 분석 중…'
+      : null
+
   if (loading) {
     return (
       <AnalysisLoadingView
         progress={progress}
-        subtext={loadingSubtextOverride ?? getLoadingMessage(messageTick)}
+        subtext={loadingSubtextOverride ?? comparisonLoadingHint ?? getLoadingMessage(messageTick)}
       />
     )
   }
@@ -381,54 +464,55 @@ export default function Home() {
           {/* Step 02: TARGET URL */}
           <div className={styles.step}>
             <div className={styles.stepHeader}>
-              <span className={styles.stepLabel}>02. TARGET URL</span>
+              <span className={styles.stepLabel}>
+                {mode === 'comparison' ? '02. TARGET URLS (A / B)' : '02. TARGET URL'}
+              </span>
             </div>
             {mode === 'comparison' && (
               <p className={styles.stepHint}>
-                실제 라이브된 사이트 URL을 비교할 수 있습니다. 개발중인 사이트와의 비교를 원하시면 로컬환경에서 실행해 주세요.
+                두 URL을 순서대로 동일한 분석 파이프라인에 넣습니다. 라이브 URL을 권장하며, 로컬 비교는 해당
+                주소에서 앱을 실행한 뒤 입력해 주세요.
               </p>
             )}
-            <input
-              ref={urlInputRef}
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com"
-              className={styles.urlInput}
-              required={mode !== 'comparison'}
-              disabled={loading || mode === 'comparison'}
-            />
-            {mode === 'comparison' && (
-              <>
-                <input
-                  type="url"
-                  value={url2}
-                  onChange={(e) => setUrl2(e.target.value)}
-                  placeholder="https://example-secondary.com"
-                  className={styles.urlInput}
-                  required={false}
-                  disabled={true}
-                  aria-label="두 번째 URL"
-                />
-                <div className={styles.comparisonSavedSection}>
-                  <div className={styles.comparisonOrDivider} role="separator" aria-label="또는">
-                    <span className={styles.comparisonOrLine} />
-                    <span className={styles.comparisonOrText}>or</span>
-                    <span className={styles.comparisonOrLine} />
-                  </div>
-                  <p className={styles.comparisonSavedIntro}>
-                    저장된 결과를 불러와서 비교분석합니다.
-                  </p>
-                  <button
-                    type="button"
-                    className={styles.comparisonSavedListButton}
-                    disabled
-                    aria-disabled="true"
-                  >
-                    분석결과 저장목록
-                  </button>
+            {mode === 'comparison' ? (
+              <div className={styles.urlInputStack}>
+                <div>
+                  <span className={styles.urlFieldLabel}>URL A</span>
+                  <input
+                    ref={urlInputRef}
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className={styles.urlInput}
+                    disabled={loading}
+                    aria-label="비교 대상 첫 번째 URL"
+                  />
                 </div>
-              </>
+                <div>
+                  <span className={styles.urlFieldLabel}>URL B</span>
+                  <input
+                    type="url"
+                    value={url2}
+                    onChange={(e) => setUrl2(e.target.value)}
+                    placeholder="https://competitor.example.com"
+                    className={styles.urlInput}
+                    disabled={loading}
+                    aria-label="비교 대상 두 번째 URL"
+                  />
+                </div>
+              </div>
+            ) : (
+              <input
+                ref={urlInputRef}
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com"
+                className={styles.urlInput}
+                required
+                disabled={loading}
+              />
             )}
           </div>
 
@@ -447,7 +531,7 @@ export default function Home() {
                     type="button"
                     className={`${styles.pill} ${active ? styles.pillActive : ''}`}
                     onClick={() => togglePriority(opt.id)}
-                    disabled={loading || mode === 'comparison'}
+                    disabled={loading}
                   >
                     {opt.label}
                   </button>
@@ -456,8 +540,14 @@ export default function Home() {
             </div>
           </div>
 
-          <button type="submit" disabled={loading || mode === 'comparison'} className={styles.cta}>
-            {mode === 'comparison' ? 'Coming soon' : loading ? 'Analyzing...' : 'START ANALYSIS'}
+          <button type="submit" disabled={loading} className={styles.cta}>
+            {mode === 'comparison'
+              ? loading
+                ? 'Analyzing...'
+                : 'START COMPARISON'
+              : loading
+                ? 'Analyzing...'
+                : 'START ANALYSIS'}
           </button>
         </form>
 
@@ -533,6 +623,34 @@ export default function Home() {
           variant: 'primary',
           autoFocus: true,
           onClick: closeEmptyUrlModal,
+        },
+      ]}
+    />
+    <AppModal
+      open={compareUrlsModal}
+      title="URL을 두 개 입력해 주세요"
+      onClose={() => setCompareUrlsModal(false)}
+      description={<p>비교 분석에는 URL A와 URL B를 모두 입력해야 합니다.</p>}
+      actions={[
+        {
+          label: '확인',
+          variant: 'primary',
+          autoFocus: true,
+          onClick: () => setCompareUrlsModal(false),
+        },
+      ]}
+    />
+    <AppModal
+      open={compareSameUrlModal}
+      title="서로 다른 URL을 입력해 주세요"
+      onClose={() => setCompareSameUrlModal(false)}
+      description={<p>비교를 위해서는 두 주소가 달라야 합니다.</p>}
+      actions={[
+        {
+          label: '확인',
+          variant: 'primary',
+          autoFocus: true,
+          onClick: () => setCompareSameUrlModal(false),
         },
       ]}
     />

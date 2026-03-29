@@ -1,0 +1,343 @@
+/* design.md — flat, 1px borders, Pretendard, mint point, wide section rhythm */
+
+.page {
+  min-height: 100vh;
+  background: var(--app-bg);
+  color: var(--app-text-bright);
+  font-family: 'Pretendard', sans-serif;
+  font-weight: 300;
+  letter-spacing: 0.02em;
+  padding: 2rem 1rem 4rem;
+}
+
+.inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+
+.badge {
+  display: inline-block;
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 300;
+  letter-spacing: 0.12em;
+  color: var(--app-point);
+  border: 1px solid var(--app-point);
+  border-radius: 999px;
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  font-size: clamp(1.75rem, 4vw, 2.35rem);
+  font-weight: 400;
+  color: var(--app-text-primary);
+  margin: 0 0 0.75rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.subtitle {
+  margin: 0 0 3rem 0;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+  max-width: 52rem;
+}
+
+.reqLine {
+  margin: 0 0 2.5rem 0;
+  padding: 0.85rem 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--app-point-hover);
+  border: 1px solid var(--app-border-panel);
+  border-radius: 8px;
+  background: var(--app-surface-raised);
+}
+
+.previewRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 3rem;
+}
+
+@media (max-width: 720px) {
+  .previewRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.previewCard {
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  background: var(--app-surface-deep);
+  min-height: 160px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.previewLabel {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  border-bottom: 1px solid var(--app-border-strong);
+}
+
+.previewUrl {
+  font-size: 0.75rem;
+  color: var(--app-text-secondary);
+  word-break: break-all;
+  padding: 0 0.75rem 0.5rem;
+}
+
+.previewImgWrap {
+  flex: 1;
+  min-height: 140px;
+  max-height: min(32vh, 280px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--app-surface-raised);
+}
+
+.previewImg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top center;
+}
+
+.previewPlaceholder {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--app-border-icon);
+  padding: 1rem;
+  text-align: center;
+}
+
+.sectionLabel {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--app-step-label);
+  margin: 0 0 1rem 0;
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 3.5rem;
+}
+
+@media (max-width: 800px) {
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.summaryCard {
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  padding: 1.25rem 1rem;
+  background: var(--app-surface-raised);
+}
+
+.summaryCardWinA {
+  border-color: var(--app-point);
+}
+
+.summaryCardWinB {
+  border-color: var(--app-point);
+}
+
+.summaryCardTie {
+  border-color: var(--app-border-mid);
+}
+
+.summaryTitle {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  margin: 0 0 0.75rem 0;
+}
+
+.summaryValues {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.summarySide {
+  flex: 1;
+  text-align: center;
+}
+
+.summarySideLabel {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.summaryNum {
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--app-text-primary);
+}
+
+.summaryVerdict {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--app-border-strong);
+  font-size: 0.8125rem;
+  color: var(--app-point);
+  text-align: center;
+}
+
+.tableWrap {
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  overflow: auto;
+  margin-bottom: 3rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--app-border-strong);
+}
+
+.table th {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+  background: var(--app-surface-deep);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.cellWin {
+  color: var(--app-point);
+  font-weight: 500;
+}
+
+.cellMuted {
+  color: var(--app-text-secondary);
+}
+
+.verdictCol {
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+.footerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.65rem 1.15rem;
+  font-family: 'Pretendard', sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.btnPrimary {
+  background: var(--app-point);
+  color: var(--app-cta-on-point);
+  border-color: var(--app-point);
+}
+
+.btnPrimary:hover {
+  background: var(--app-point-hover);
+  border-color: var(--app-point-hover);
+}
+
+.btnOutline {
+  background: transparent;
+  color: var(--app-text-secondary);
+  border-color: var(--app-border-mid);
+}
+
+.btnOutline:hover {
+  border-color: var(--app-point);
+  color: var(--app-point);
+}
+
+.hint {
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--app-text-muted);
+  max-width: 40rem;
+}
+
+.empty {
+  text-align: center;
+  padding: 4rem 1rem;
+}
+
+.emptyTitle {
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--app-text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.emptyText {
+  color: var(--app-text-secondary);
+  margin-bottom: 1.5rem;
+}
+
+.emptyLink {
+  display: inline-block;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--app-cta-on-point);
+  background: var(--app-point);
+  border-radius: 8px;
+}
+
+.emptyLink:hover {
+  background: var(--app-point-hover);
+}

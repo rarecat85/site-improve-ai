@@ -214,6 +214,22 @@
   cursor: not-allowed;
 }
 
+.urlInputStack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.urlFieldLabel {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--app-text-muted);
+}
+
 /* Comparison mode: saved-report path (UI only, disabled) */
 .comparisonSavedSection {
   display: flex;

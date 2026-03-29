@@ -12,4 +12,6 @@ export type ReportOpenMeta = {
   source: 'analyze' | 'restore'
   /** 메뉴에서 연 스냅샷 키(`snap:…` 또는 `latest`) */
   snapshotId?: string
+  /** 비교 화면에서 「전체 리포트」로 진입한 경우 하단 「비교 결과로」 표시 */
+  fromCompare?: boolean
 }
