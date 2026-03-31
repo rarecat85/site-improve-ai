@@ -47,8 +47,13 @@
 
 ### 2.3 개선 항목 한 건의 필드
 
-AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`, `difficulty`, `description`, `codeExample`, `source`, `matchesRequirement`, `requirementRelevance`, `priorityReason` 등.  
+AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`, `difficulty`, `scope`, `description`, `codeExample`, `source`, `matchesRequirement`, `requirementRelevance`, `priorityReason` 등.  
 상세 규칙은 `getCategoryJsonRules` in `lib/services/ai.ts` 참고.
+
+#### `scope` (content / global)
+
+- `content`: 본문(`<main>`·`body` 흐름)에서 해결 가능한 성격의 항목
+- `global`: 전역 레이아웃/설정(`<head>`, 공통 헤더·푸터, HTTP 헤더·빌드·인프라 등) 성격이 강한 항목
 
 ---
 
@@ -86,6 +91,10 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 | **AEO/GEO** | **aiseo-audit** 결과 문자열 (`formatAiseoSummaryForPrompt`) | aiseo **점수·권장만**. 인용·구조화·엔티티 설명. |
 
 공통 제약(프롬프트): **Lighthouse/axe/aiseo 목록에 없는 이슈를 지어내지 말 것**, `source`는 `Lighthouse · …`, `axe-core · …`, `aiseo-audit · …` 형태 권장.
+
+### 4.2 로컬호스트(개발/스테이징) URL의 개선안 생성 정책
+
+분석 대상 URL이 `localhost` 또는 `127.0.0.1`이면, 리포트 생성 프롬프트에서 **전역 템플릿/공통 레이아웃 및 `<head>` 메타·구조화 데이터(JSON-LD) 관련 개선안은 되도록 제외**하도록 지시합니다. 대신 가능한 한 `<main>`·본문에서 해결 가능한 항목(`scope=content`)을 우선 제시하도록 유도합니다.
 
 ### 4.1 Lighthouse 요약이 만들어지는 방식 (`buildLighthouseSummary`)
 

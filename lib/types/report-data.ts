@@ -12,6 +12,12 @@ export interface ReportImprovement {
   codeExample?: string
   source?: string
   category?: string
+  /**
+   * 개선 범위(대략적인 분류).
+   * - content: 본문(<main>·body 흐름)에서 해결 가능한 항목
+   * - global: 전역 레이아웃/설정(<head>, 공통 헤더·푸터, HTTP 헤더·빌드·인프라 등) 성격이 강한 항목
+   */
+  scope?: 'content' | 'global'
   requirementRelevance?: string
   priorityReason?: string
   matchesRequirement?: boolean

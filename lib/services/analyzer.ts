@@ -21,6 +21,34 @@ const ARCH_NETWORK_IDLE_MS = 14_000
 const ARCH_NETWORK_IDLE_CONCURRENCY = 2
 const ARCH_POST_IDLE_SETTLE_MS = 1_000
 
+/** 2차 캡처 직전: 뷰포트 내 이미지 로딩 대기 상한 */
+const VIEWPORT_IMAGE_WAIT_MS = 2_500
+
+async function waitForViewportImagesLoaded(page: Page, timeoutMs: number): Promise<void> {
+  try {
+    await page.waitForFunction(
+      () => {
+        const vh = window.innerHeight || 0
+        const vw = window.innerWidth || 0
+        const imgs = Array.from(document.images || [])
+        const inViewport = imgs.filter((img) => {
+          const rect = img.getBoundingClientRect()
+          if (!rect || rect.width <= 1 || rect.height <= 1) return false
+          const visibleX = rect.left < vw && rect.right > 0
+          const visibleY = rect.top < vh && rect.bottom > 0
+          return visibleX && visibleY
+        })
+        // 화면 안에 이미지가 없으면 대기할 대상도 없다.
+        if (inViewport.length === 0) return true
+        return inViewport.every((img) => img.complete && img.naturalWidth > 0)
+      },
+      { timeout: timeoutMs }
+    )
+  } catch {
+    // 타임아웃/에러는 캡처 자체를 막지 않는다.
+  }
+}
+
 function extractMetadataAndPageText(html: string): {
   metadata: { title?: string; description?: string; headings?: string[] }
   pageText: string
@@ -174,7 +202,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       }
 
       const options = {
-        logLevel: 'info' as const,
+        logLevel: 'silent' as const,
         output: 'json' as const,
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo', 'pwa'],
         port: debugPort, // Puppeteer가 할당한 디버깅 포트
@@ -228,6 +256,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       const archHtml = await page.content()
       if (archHtml && archHtml.length >= MIN_VIABLE_HTML_LENGTH) {
         domForArchitecture = archHtml
+        await waitForViewportImagesLoaded(page, VIEWPORT_IMAGE_WAIT_MS)
         screenshotFinalB64 = await page.screenshot({ encoding: 'base64' })
         console.log(
           `[analyzer] 2nd snapshot OK: dom ${archHtml.length} bytes — screenshot aligned with pageArchitecture input`

@@ -12,7 +12,7 @@
         → analyzeWebsite (Puppeteer, Lighthouse, axe, Cheerio …)
         → fetchCruxSummary (선택, Chrome UX Report API)
         → runAiseoAudit (aiseo-audit · AEO/GEO)
-        → generateReport (다중 LLM + computeDashboardGrades)
+        → generateReport (다중 LLM + computeDashboardGrades, URL 정책 포함)
         → analyzeContentInsights (OpenAI · 목적/타겟)
         → summarizePageArchitectureSections (Claude · 섹션 요약)
         → findSimilarSites (OpenAI · 유사·경쟁 사이트)
@@ -47,6 +47,14 @@
 | 예상 효과 문구 | 동일 | `summary.estimatedImpact` 등 고정 문구에 가까운 요약 필드 |
 
 개선 항목 본문은 **Lighthouse / axe / aiseo-audit** 결과를 프롬프트에 넣고 **OpenAI·Anthropic·Gemini**가 카테고리별로 생성합니다. 공통 맥락(`metaLines`)에는 **페이지 통계·CrUX·HTTP 응답 메타(보안 헤더 등)**도 포함되며, SEO 전용으로는 **DOM에서 뽑은 JSON-LD(`@type`) 요약**이 추가됩니다(아래 §7·[REPORT_CATEGORY_TABS.md](./REPORT_CATEGORY_TABS.md)).
+
+### 3.1 로컬호스트(개발/스테이징) URL 정책
+
+분석 대상 URL의 호스트가 `localhost` 또는 `127.0.0.1`이면, 리포트 생성 프롬프트에 아래 정책을 덧붙입니다.
+
+- 전역 템플릿/공통 레이아웃(헤더·푸터·크롬) 및 `<head>` 메타·구조화 데이터(JSON-LD), canonical/robots, 사이트 전역 SEO 설정은 **라이브 배포 환경 코드에서 처리될 가능성이 높다**고 보고, 해당 성격의 개선안은 **되도록 제외**합니다.
+- 단, 제공 데이터에서 **차단적 보안/접근성/검색 노출** 문제가 분명하면 예외적으로 포함할 수 있습니다.
+- 가능한 한 `<main>`·본문(body 흐름)에서 해결 가능한 개선안을 우선 제시하도록 유도합니다.
 
 ---
 
@@ -134,6 +142,8 @@ SEO·접근성·성능·모범사례·AEO/GEO·UX/UI·기타 탭의 **필터 규
 | JSON-LD 프롬프트 요약 | `lib/utils/json-ld-snippet.ts` |
 | AEO 감사 래퍼 | `lib/services/run-aiseo-audit.ts` |
 | Overview UI | `app/report/ReportView.tsx` (`panel-all`) |
+| 비교 분석 요약 UI | `app/compare/CompareView.tsx` |
+| 비교 분석 집계 | `lib/utils/compare-report-metrics.ts` |
 
 ---
 

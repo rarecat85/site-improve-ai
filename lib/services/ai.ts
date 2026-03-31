@@ -493,6 +493,9 @@ function getCategoryJsonRules(category: string): string {
 - impact: 높음 | 중간 | 낮음 — 사용자·비즈니스 관점, **피드백 품질** 지침 준수
 - difficulty: 쉬움 | 보통 | 어려움 — 구현 난이도, 과소·과대 평가 금지
 - description: 한국어, **실행 가능한** 수정 단계. 위 분석 데이터에 근거할 것.
+- scope: "content" | "global"
+  - content: 본문(<main>·body 흐름)에서 해결 가능한 항목
+  - global: 전역 레이아웃/설정(<head>, 공통 헤더·푸터, HTTP 헤더·빌드·인프라 등) 성격이 강한 항목
 - codeExample: HTML/CSS/메타/헤더 예시 등 가능하면 문자열로. 없으면 빈 문자열 "". 마크다운 코드펜스(\`\`\`) 사용 금지.
 - source: 반드시 아래 중 하나에 맞출 것 — "Lighthouse · 감사제목 또는 ID", "axe-core · 규칙ID", "aiseo-audit · …". **위에 없는 감사를 지어내지 말 것.**
 
@@ -503,7 +506,7 @@ ${getSharedReportQualityRules()}
 - 근거 없는 "중요하다/급하다"만 반복하기
 
 응답: JSON만 (설명·마크다운 없음).
-{"improvements":[{"title":"...","category":"${category}","priority":"high|medium|low","impact":"높음|중간|낮음","difficulty":"쉬움|보통|어려움","description":"...","codeExample":"...","source":"...","matchesRequirement":true|false,"requirementRelevance":"...","priorityReason":"..."}]}
+{"improvements":[{"title":"...","category":"${category}","priority":"high|medium|low","impact":"높음|중간|낮음","difficulty":"쉬움|보통|어려움","scope":"content|global","description":"...","codeExample":"...","source":"...","matchesRequirement":true|false,"requirementRelevance":"...","priorityReason":"..."}]}
 데이터에 개선점이 거의 없으면 improvements는 빈 배열 [] 가능.
 `
 }
@@ -569,6 +572,7 @@ ${getCategoryJsonRules(category)}`
       category: normalizeCategory(category, i.source),
       source: i.source || '분석 결과',
       codeExample: i.codeExample ?? '',
+      scope: (i.scope === 'global' || i.scope === 'content') ? i.scope : 'content',
       matchesRequirement: Boolean(i.matchesRequirement),
       requirementRelevance: i.requirementRelevance ?? '',
       priorityReason: i.priorityReason ?? '',
@@ -614,9 +618,19 @@ ${issues.join('\n')}
  * SEO → OpenAI, 접근성·성능·모범사례 → Claude, AEO/GEO → Gemini
  * (Overview 보조: 목적·타겟(세분 필드)·유사 사이트 → OpenAI, 페이지 구조 요약 → Claude — `analyzeContentInsights` 등)
  */
+function isLocalhostUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
 export async function generateReport(
   requirement: string,
-  analysisResults: AnalysisResults
+  analysisResults: AnalysisResults,
+  analyzedUrl?: string
 ): Promise<any> {
   const metadata = analysisResults.metadata || {}
   const contextBlock = [
@@ -625,6 +639,7 @@ export async function generateReport(
     formatResponseMetaForPrompt(analysisResults.responseMeta),
   ].join('\n\n')
   const metaLines = [
+    analyzedUrl ? `분석 대상 URL: ${analyzedUrl}` : '',
     `페이지 제목: ${metadata.title ?? '없음'}`,
     `메타 설명: ${metadata.description ?? '없음'}`,
     `제목 구조(h1,h2,h3): ${(metadata.headings && metadata.headings.length) ? metadata.headings.join(' → ') : '없음'}`,
@@ -634,9 +649,13 @@ export async function generateReport(
 
   try {
     const categoryResults = await Promise.all(
-      REPORT_CATEGORIES.map((cat) =>
-        generateReportForCategory(cat, requirement, analysisResults, metaLines)
-      )
+      REPORT_CATEGORIES.map((cat) => {
+        const localhostNote =
+          analyzedUrl && isLocalhostUrl(analyzedUrl)
+            ? '\n\n[로컬호스트 분석 정책]\n- 이 URL은 로컬 개발/스테이징 환경으로 간주합니다.\n- 전역 템플릿/공통 레이아웃(헤더·푸터·크롬) 및 <head> 메타·구조화 데이터(JSON-LD), canonical/robots, 사이트 전역 SEO 설정은 **라이브 배포 환경 코드에서 처리될 가능성이 높으므로**, 해당 성격의 개선안은 되도록 제외하세요.\n- 단, 제공 데이터에서 명백한 차단적 보안/접근성/검색 노출 문제가 확인되면 예외적으로 포함할 수 있습니다.\n- 가능한 한 <main>·본문(body 흐름)에서 해결 가능한 개선안(scope=content)을 우선 제시하세요.\n'
+            : ''
+        return generateReportForCategory(cat, requirement + localhostNote, analysisResults, metaLines)
+      })
     )
 
     const allImprovements: any[] = []

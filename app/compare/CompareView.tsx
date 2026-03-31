@@ -18,7 +18,17 @@ import {
   computeCompareSideMetrics,
   type CompareWinner,
 } from '@/lib/utils/compare-report-metrics'
+import { saveCompareSessionToIdb } from '@/lib/storage/site-improve-report-idb'
 import styles from './compare.module.css'
+
+function isLocalhostUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
 
 function winnerLabel(w: CompareWinner, aLabel: string, bLabel: string): string {
   if (w === 'tie') return '동률'
@@ -35,6 +45,7 @@ function Verdict({ w }: { w: CompareWinner }) {
 export default function CompareView() {
   const router = useRouter()
   const [session, setSession] = useState<CompareSessionV1 | null | undefined>(undefined)
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   useEffect(() => {
     setSession(parseCompareSession(sessionStorage.getItem(COMPARE_SESSION_STORAGE_KEY)))
@@ -43,8 +54,15 @@ export default function CompareView() {
   const reportA = session?.a.report as ReportData | undefined
   const reportB = session?.b.report as ReportData | undefined
 
-  const metricsA = reportA ? computeCompareSideMetrics(reportA) : null
-  const metricsB = reportB ? computeCompareSideMetrics(reportB) : null
+  const urlA = session?.a.url || '(URL 없음)'
+  const urlB = session?.b.url || '(URL 없음)'
+  const localhostMode =
+    (typeof urlA === 'string' && isLocalhostUrl(urlA)) ||
+    (typeof urlB === 'string' && isLocalhostUrl(urlB))
+  const scopeMode = localhostMode ? 'content' : 'all'
+
+  const metricsA = reportA ? computeCompareSideMetrics(reportA, { scope: scopeMode }) : null
+  const metricsB = reportB ? computeCompareSideMetrics(reportB, { scope: scopeMode }) : null
 
   if (session === undefined) {
     return (
@@ -96,8 +114,19 @@ export default function CompareView() {
     )
   }
 
-  const urlA = session.a.url || '(URL 없음)'
-  const urlB = session.b.url || '(URL 없음)'
+  const saveCompare = async () => {
+    if (!session || saveStatus === 'saving') return
+    setSaveStatus('saving')
+    try {
+      await saveCompareSessionToIdb(session)
+      setSaveStatus('saved')
+      window.setTimeout(() => setSaveStatus('idle'), 2500)
+    } catch {
+      setSaveStatus('error')
+      window.setTimeout(() => setSaveStatus('idle'), 3000)
+    }
+  }
+
   const winTotal = compareMetricWinner(metricsA, metricsB, 'totalIssues')
   const winHigh = compareMetricWinner(metricsA, metricsB, 'highPriority')
   const winAiseo = compareAiseoWinner(metricsA, metricsB)
@@ -117,6 +146,9 @@ export default function CompareView() {
         <p className={styles.subtitle}>
           두 URL에 대해 동일한 파이프라인으로 분석한 뒤, 이슈 밀도·우선순위·항목별 지표를 나란히 봅니다. 숫자가
           작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). AEO/GEO 점수는 높을수록 유리합니다.
+          {localhostMode
+            ? ' (로컬호스트가 포함되어 있어, 비교는 본문(<main>/body)에서 해결 가능한 항목만 집계합니다.)'
+            : ''}
         </p>
         <p className={styles.reqLine}>{session.requirement}</p>
 
@@ -255,6 +287,21 @@ export default function CompareView() {
         </div>
 
         <div className={styles.footerActions}>
+          <button
+            type="button"
+            className={`${styles.btn} ${styles.btnOutline}`}
+            onClick={() => void saveCompare()}
+            disabled={saveStatus === 'saving'}
+            aria-busy={saveStatus === 'saving'}
+          >
+            {saveStatus === 'saving'
+              ? '저장 중…'
+              : saveStatus === 'saved'
+                ? '저장됨'
+                : saveStatus === 'error'
+                  ? '저장 실패'
+                  : '비교 저장'}
+          </button>
           <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => openDetail('a')}>
             A 전체 리포트
           </button>

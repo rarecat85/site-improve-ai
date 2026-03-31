@@ -17,8 +17,13 @@ function emptyByCategory(): Record<string, { count: number; highCount: number }>
   return o
 }
 
-export function computeCompareSideMetrics(data: ReportData): CompareSideMetrics {
-  const improvements = data.improvements ?? []
+export function computeCompareSideMetrics(
+  data: ReportData,
+  options?: { scope?: 'all' | 'content' }
+): CompareSideMetrics {
+  const all = data.improvements ?? []
+  const improvements =
+    options?.scope === 'content' ? all.filter((i) => i.scope !== 'global') : all
   const byCategory = emptyByCategory()
 
   for (const item of improvements) {
@@ -30,13 +35,12 @@ export function computeCompareSideMetrics(data: ReportData): CompareSideMetrics 
     if (item.priority === 'high') byCategory[cat].highCount += 1
   }
 
-  const highPriority =
-    data.summary?.highPriority ??
-    improvements.filter((i) => i.priority === 'high').length
+  // 필터링 모드에서는 summary 숫자와 불일치할 수 있어 improvements 기반으로 계산한다.
+  const highPriority = improvements.filter((i) => i.priority === 'high').length
 
   const matchesRequirementCount = improvements.filter((i) => i.matchesRequirement).length
 
-  const totalIssues = data.summary?.totalIssues ?? improvements.length
+  const totalIssues = improvements.length
 
   const raw = data.aiseo?.overallScore
   const aiseoOverall =

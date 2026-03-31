@@ -10,11 +10,19 @@ import {
   type ReportRestoreEventDetail,
 } from '@/lib/constants/report-session'
 import {
+  deleteCompareSnapshotById,
+  listCompareSnapshotMetaFromIdb,
+  loadCompareSessionFromIdbBySnapshotId,
   listReportSnapshotMetaFromIdb,
   loadReportPayloadFromIdbBySnapshotId,
   saveReportPayloadToIdb,
   type StoredReportPayload,
 } from '@/lib/storage/site-improve-report-idb'
+import {
+  COMPARE_SESSION_STORAGE_KEY,
+  parseCompareSession,
+  type CompareSessionV1,
+} from '@/lib/constants/compare-session'
 import { ChromeNavVisibilityProvider, useChromeNavVisibility } from './chrome-nav-visibility'
 import styles from './app-chrome.module.css'
 
@@ -70,8 +78,13 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
   const [snapshots, setSnapshots] = useState<
     Awaited<ReturnType<typeof listReportSnapshotMetaFromIdb>>
   >([])
+  const [compareSnapshots, setCompareSnapshots] = useState<
+    Awaited<ReturnType<typeof listCompareSnapshotMetaFromIdb>>
+  >([])
   const [listLoading, setListLoading] = useState(false)
+  const [compareListLoading, setCompareListLoading] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
+  const [compareRestoreError, setCompareRestoreError] = useState<string | null>(null)
   const [unsavedSwitchModal, setUnsavedSwitchModal] = useState<{ snapshotId: string } | null>(null)
   const [snapshotRestoreBusy, setSnapshotRestoreBusy] = useState(false)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
@@ -95,12 +108,27 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const refreshCompareSnapshots = useCallback(async () => {
+    setCompareListLoading(true)
+    setCompareRestoreError(null)
+    try {
+      const list = await listCompareSnapshotMetaFromIdb()
+      setCompareSnapshots(list)
+    } catch {
+      setCompareSnapshots([])
+      setCompareRestoreError('목록을 불러오지 못했습니다.')
+    } finally {
+      setCompareListLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!navOpen) return
     void refreshSnapshots()
+    void refreshCompareSnapshots()
     const t = window.setTimeout(() => closeBtnRef.current?.focus(), 0)
     return () => window.clearTimeout(t)
-  }, [navOpen, refreshSnapshots])
+  }, [navOpen, refreshSnapshots, refreshCompareSnapshots])
 
   useEffect(() => {
     if (pathname !== '/report') setUnsavedSwitchModal(null)
@@ -224,6 +252,48 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
 
   const showNavChrome = !hideHamburger
 
+  const openCompareSnapshot = useCallback(
+    async (id: string) => {
+      setCompareRestoreError(null)
+      let raw: unknown
+      try {
+        raw = await loadCompareSessionFromIdbBySnapshotId(id)
+      } catch {
+        setCompareRestoreError('해당 비교 저장 항목을 열 수 없습니다.')
+        return
+      }
+      const parsed: CompareSessionV1 | null = parseCompareSession(
+        typeof raw === 'string' ? raw : JSON.stringify(raw)
+      )
+      if (!parsed) {
+        setCompareRestoreError('저장된 비교 데이터 형식이 올바르지 않습니다.')
+        return
+      }
+      try {
+        sessionStorage.setItem(COMPARE_SESSION_STORAGE_KEY, JSON.stringify(parsed))
+      } catch {
+        setCompareRestoreError('비교 결과를 세션에 기록할 수 없습니다.')
+        return
+      }
+      closeNav()
+      router.push('/compare')
+    },
+    [router]
+  )
+
+  const deleteCompareSnapshot = useCallback(
+    async (id: string) => {
+      setCompareRestoreError(null)
+      try {
+        await deleteCompareSnapshotById(id)
+        await refreshCompareSnapshots()
+      } catch {
+        setCompareRestoreError('삭제하지 못했습니다.')
+      }
+    },
+    [refreshCompareSnapshots]
+  )
+
   return (
     <div className={styles.chromeRoot}>
       {showNavChrome ? (
@@ -327,6 +397,58 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
                               : ''}
                           </span>
                         </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className={styles.divider} role="separator" />
+
+              <div className={styles.savedSection}>
+                <h2 className={styles.savedHeading}>저장된 비교</h2>
+                <p className={styles.savedHint}>비교 화면의 저장 버튼으로 보관한 결과입니다.</p>
+                {compareRestoreError && <p className={styles.savedError}>{compareRestoreError}</p>}
+                {compareListLoading ? (
+                  <p className={styles.savedEmpty}>불러오는 중…</p>
+                ) : compareSnapshots.length === 0 ? (
+                  <p className={styles.savedEmpty}>저장된 비교가 없습니다.</p>
+                ) : (
+                  <ul className={styles.savedList}>
+                    {compareSnapshots.map((item) => (
+                      <li key={item.id}>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
+                          <button
+                            type="button"
+                            className={styles.savedItem}
+                            onClick={() => void openCompareSnapshot(item.id)}
+                          >
+                            <span className={styles.savedItemUrl}>
+                              {item.urlA || '(A 없음)'} ↔ {item.urlB || '(B 없음)'}
+                            </span>
+                            <span className={styles.savedItemMeta}>
+                              {formatSavedAt(item.savedAt)}
+                              {item.requirement
+                                ? ` · ${item.requirement.slice(0, 42)}${item.requirement.length > 42 ? '…' : ''}`
+                                : ''}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.closeButton}
+                            aria-label="저장된 비교 삭제"
+                            onClick={() => void deleteCompareSnapshot(item.id)}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                              <path
+                                d="M6 6l12 12M18 6L6 18"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>

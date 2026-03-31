@@ -6,10 +6,12 @@
 import { normalizeReportUrlForMatch } from '@/lib/utils/report-url'
 
 const DB_NAME = 'site-improve-ai'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE = 'reportSnapshots'
+const COMPARE_STORE = 'compareSnapshots'
 const KEY_LATEST = 'latest'
 const SNAP_PREFIX = 'snap:'
+const COMPARE_PREFIX = 'compare:'
 
 /** 히스토리에 보관할 최대 스냅샷 수 */
 const MAX_SNAPSHOT_KEYS = 40
@@ -22,9 +24,23 @@ export type StoredReportPayload = {
   savedAt?: number
 }
 
+export type StoredComparePayload = {
+  v: 1
+  session: unknown
+  savedAt?: number
+}
+
 export type ReportSnapshotListItem = {
   id: string
   url: string
+  savedAt: number
+  requirement: string
+}
+
+export type CompareSnapshotListItem = {
+  id: string
+  urlA: string
+  urlB: string
   savedAt: number
   requirement: string
 }
@@ -46,6 +62,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE)
       }
+      if (!db.objectStoreNames.contains(COMPARE_STORE)) {
+        db.createObjectStore(COMPARE_STORE)
+      }
     }
     req.onsuccess = () => resolve(req.result)
   })
@@ -55,8 +74,18 @@ function isSnapshotKey(key: IDBValidKey | undefined): key is string {
   return typeof key === 'string' && key.startsWith(SNAP_PREFIX)
 }
 
+function isCompareKey(key: IDBValidKey | undefined): key is string {
+  return typeof key === 'string' && key.startsWith(COMPARE_PREFIX)
+}
+
 function parseSnapshotKeySort(key: string): number {
   const rest = key.slice(SNAP_PREFIX.length)
+  const n = Number(rest.split('-')[0])
+  return Number.isFinite(n) ? n : 0
+}
+
+function parseCompareKeySort(key: string): number {
+  const rest = key.slice(COMPARE_PREFIX.length)
   const n = Number(rest.split('-')[0])
   return Number.isFinite(n) ? n : 0
 }
@@ -312,5 +341,132 @@ export async function listSnapshotMetasMatchingUrl(url: string): Promise<ReportS
     return filtered
   } catch {
     return []
+  }
+}
+
+function compareMetaFromSessionLike(
+  id: string,
+  sessionLike: any,
+  savedAt: number
+): CompareSnapshotListItem | null {
+  const urlA = typeof sessionLike?.a?.url === 'string' ? sessionLike.a.url : ''
+  const urlB = typeof sessionLike?.b?.url === 'string' ? sessionLike.b.url : ''
+  const requirement = typeof sessionLike?.requirement === 'string' ? sessionLike.requirement : ''
+  if (!urlA && !urlB && !requirement) return null
+  return { id, urlA, urlB, savedAt, requirement }
+}
+
+export async function saveCompareSessionToIdb(session: unknown): Promise<void> {
+  const db = await openDb()
+  try {
+    const savedAt = Date.now()
+    const key = `${COMPARE_PREFIX}${savedAt}-${Math.random().toString(36).slice(2, 9)}`
+    const record: StoredComparePayload = { v: 1, session, savedAt }
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(COMPARE_STORE, 'readwrite')
+      tx.objectStore(COMPARE_STORE).put(record, key)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IndexedDB write failed'))
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted'))
+    })
+
+    // trim
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(COMPARE_STORE, 'readwrite')
+      const store = tx.objectStore(COMPARE_STORE)
+      const keysReq = store.getAllKeys()
+      keysReq.onerror = () => reject(keysReq.error ?? new Error('IDB getAllKeys failed'))
+      keysReq.onsuccess = () => {
+        const keys = keysReq.result.filter((k): k is string => isCompareKey(k))
+        if (keys.length <= MAX_SNAPSHOT_KEYS) return
+        const sortedAsc = [...keys].sort((a, b) => parseCompareKeySort(a) - parseCompareKeySort(b))
+        const excess = sortedAsc.length - MAX_SNAPSHOT_KEYS
+        for (let i = 0; i < excess; i++) store.delete(sortedAsc[i])
+      }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IDB trim failed'))
+      tx.onabort = () => reject(tx.error ?? new Error('IDB trim aborted'))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export async function loadCompareSessionFromIdbBySnapshotId(id: string): Promise<unknown | null> {
+  if (!isCompareKey(id)) throw new Error('Invalid compare snapshot id')
+  const db = await openDb()
+  try {
+    if (!db.objectStoreNames.contains(COMPARE_STORE)) return null
+    const tx = db.transaction(COMPARE_STORE, 'readonly')
+    const store = tx.objectStore(COMPARE_STORE)
+    return await new Promise<unknown | null>((resolve, reject) => {
+      const getReq = store.get(id)
+      getReq.onerror = () => reject(getReq.error ?? new Error('IndexedDB read failed'))
+      getReq.onsuccess = () => {
+        const v = getReq.result as StoredComparePayload | undefined
+        resolve(v && typeof v === 'object' && (v as any).session ? (v as any).session : null)
+      }
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export async function listCompareSnapshotMetaFromIdb(): Promise<CompareSnapshotListItem[]> {
+  const db = await openDb()
+  try {
+    if (!db.objectStoreNames.contains(COMPARE_STORE)) return []
+    return await new Promise<CompareSnapshotListItem[]>((resolve, reject) => {
+      const tx = db.transaction(COMPARE_STORE, 'readonly')
+      const store = tx.objectStore(COMPARE_STORE)
+      const keysReq = store.getAllKeys()
+      keysReq.onerror = () => reject(keysReq.error ?? new Error('IDB getAllKeys failed'))
+      keysReq.onsuccess = () => {
+        const keys = (keysReq.result as IDBValidKey[]).filter((k): k is string => isCompareKey(k))
+        keys.sort((a, b) => parseCompareKeySort(b) - parseCompareKeySort(a))
+        const metas: CompareSnapshotListItem[] = []
+        let idx = 0
+        const next = () => {
+          if (idx >= keys.length) {
+            resolve(metas)
+            return
+          }
+          const key = keys[idx++]
+          const gr = store.get(key)
+          gr.onerror = () => reject(gr.error ?? new Error('IndexedDB read failed'))
+          gr.onsuccess = () => {
+            const rec = gr.result as StoredComparePayload | undefined
+            const savedAt = typeof rec?.savedAt === 'number' ? rec!.savedAt! : 0
+            const meta = compareMetaFromSessionLike(key, rec?.session, savedAt)
+            if (meta) metas.push(meta)
+            next()
+          }
+        }
+        if (keys.length === 0) {
+          resolve([])
+          return
+        }
+        next()
+      }
+      tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'))
+    })
+  } finally {
+    db.close()
+  }
+}
+
+export async function deleteCompareSnapshotById(id: string): Promise<void> {
+  if (!isCompareKey(id)) throw new Error('Invalid compare snapshot id')
+  const db = await openDb()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(COMPARE_STORE, 'readwrite')
+      tx.objectStore(COMPARE_STORE).delete(id)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error ?? new Error('IndexedDB delete failed'))
+      tx.onabort = () => reject(tx.error ?? new Error('IndexedDB delete aborted'))
+    })
+  } finally {
+    db.close()
   }
 }
