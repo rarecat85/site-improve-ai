@@ -98,7 +98,7 @@
 
 .stepLabel {
   margin: 0 1rem;
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.1em;
   color: var(--app-step-label);
@@ -112,8 +112,8 @@
 }
 
 .stepHint {
-  font-size: 0.8rem;
-  color: var(--app-text-muted);
+  font-size: 0.875rem;
+  color: var(--app-text-secondary);
   margin: -0.4rem 0 1.25rem 0;
   text-align: center;
 }
