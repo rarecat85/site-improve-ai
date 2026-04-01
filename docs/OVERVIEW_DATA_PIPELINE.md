@@ -150,3 +150,25 @@ SEO·접근성·성능·모범사례·AEO/GEO·UX/UI·기타 탭의 **필터 규
 ## 10. 문서와 코드
 
 설명이 코드와 어긋나면 **코드가 우선**입니다.
+
+---
+
+## 11. 비교 분석(Compare) — 미리보기와 로컬호스트 집계
+
+### 11.1 비교 결과 미리보기 화면
+
+디자인 작업을 위해 실제 비교 분석을 실행하지 않아도, 아래 경로로 **목업 비교 결과 화면**을 볼 수 있습니다.
+
+- `/compare?preview=1`
+
+이 모드에서는 `sessionStorage`의 비교 세션이 아니라, 코드에 정의된 목업 세션을 사용합니다.
+
+- 구현: `app/compare/page.tsx`, `lib/mocks/compare-preview-data.ts`
+
+### 11.2 로컬호스트 포함 시 비교 집계(scope=content)
+
+비교 대상 URL 중 하나라도 호스트가 `localhost` 또는 `127.0.0.1`이면, 비교 화면에서는 “공통 레이아웃/전역 설정(전역 템플릿, `<head>`/인프라 성격)”을 동일하게 발생한다고 보고 **집계에서 제외**합니다.
+
+코드 기준으로는 비교 지표 집계 시 아래처럼 `scope !== 'global'`만 포함하는 형태입니다.
+
+- 구현: `app/compare/CompareView.tsx`의 `scopeMode`, `lib/utils/compare-report-metrics.ts`의 `computeCompareSideMetrics`
