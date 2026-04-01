@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { AnalysisLoadingView } from '@/app/components/analysis/AnalysisLoadingView'
 import {
   COMPARE_SESSION_STORAGE_KEY,
   parseCompareSession,
   type CompareSessionV1,
 } from '@/lib/constants/compare-session'
 import { REPORT_OPEN_META_SESSION_KEY } from '@/lib/constants/report-session'
+import { getLoadingMessage, LOADING_MESSAGE_INTERVAL_MS, LOADING_MESSAGES } from '@/lib/analysis-loading-messages'
 import type { ReportData } from '@/lib/types/report-data'
 import { CATEGORY_ORDER } from '@/lib/utils/report-improvement-category'
 import {
@@ -46,10 +48,22 @@ export default function CompareView() {
   const router = useRouter()
   const [session, setSession] = useState<CompareSessionV1 | null | undefined>(undefined)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [messageTick, setMessageTick] = useState(0)
 
   useEffect(() => {
     setSession(parseCompareSession(sessionStorage.getItem(COMPARE_SESSION_STORAGE_KEY)))
   }, [])
+
+  useEffect(() => {
+    if (session !== undefined) {
+      setMessageTick(0)
+      return
+    }
+    const interval = window.setInterval(() => {
+      setMessageTick((t) => (t >= LOADING_MESSAGES.length - 1 ? t : t + 1))
+    }, LOADING_MESSAGE_INTERVAL_MS)
+    return () => window.clearInterval(interval)
+  }, [session])
 
   const reportA = session?.a.report as ReportData | undefined
   const reportB = session?.b.report as ReportData | undefined
@@ -65,15 +79,7 @@ export default function CompareView() {
   const metricsB = reportB ? computeCompareSideMetrics(reportB, { scope: scopeMode }) : null
 
   if (session === undefined) {
-    return (
-      <div className={styles.page}>
-        <div className={styles.inner}>
-          <p className={styles.subtitle} style={{ marginBottom: 0 }}>
-            비교 결과를 불러오는 중…
-          </p>
-        </div>
-      </div>
-    )
+    return <AnalysisLoadingView progress={5} subtext={getLoadingMessage(messageTick)} />
   }
 
   const openDetail = (side: 'a' | 'b') => {
