@@ -63,6 +63,27 @@ function readReportOpenMeta(): ReportOpenMeta {
   return { source: 'analyze' }
 }
 
+function scoreToGradeAndStatus(score: number | null | undefined): { grade: string; status: string } {
+  if (score == null || !Number.isFinite(score)) return { grade: '—', status: '데이터 없음' }
+  const s = Math.max(0, Math.min(100, Math.round(score)))
+  // docs/GRADE_CRITERIA.md 와 같은 구간 사용
+  let grade: string
+  if (s >= 97) grade = 'A+'
+  else if (s >= 93) grade = 'A'
+  else if (s >= 90) grade = 'A-'
+  else if (s >= 87) grade = 'B+'
+  else if (s >= 83) grade = 'B'
+  else if (s >= 80) grade = 'B-'
+  else if (s >= 77) grade = 'C+'
+  else if (s >= 73) grade = 'C'
+  else if (s >= 65) grade = 'C-'
+  else if (s >= 55) grade = 'D'
+  else grade = 'F'
+
+  const status = s >= 90 ? '우수' : s >= 75 ? '양호' : s >= 60 ? '개선 권장' : '개선 필요'
+  return { grade, status }
+}
+
 export default function ReportView({ initialPreview = false }: ReportViewProps) {
   const { setHideHamburger } = useChromeNavVisibility()
   const router = useRouter()
@@ -337,13 +358,19 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   }
 
   // 상단 히어로: 좌측 미리보기+OVERALL, 우측 3×3 메트릭 (SEO, 성능, 접근성, 보안, PWA, 모바일, 이미지, 스크립트, AEO/GEO)
+  const qualityScore =
+    reportData.qualityAudit?.semanticScore != null && reportData.qualityAudit?.efficiencyScore != null
+      ? Math.round((Number(reportData.qualityAudit.semanticScore) + Number(reportData.qualityAudit.efficiencyScore)) / 2)
+      : reportData.qualityAudit?.semanticScore ?? reportData.qualityAudit?.efficiencyScore ?? null
+  const qualityGrade = scoreToGradeAndStatus(qualityScore)
+
   const scoreCards = [
     { id: 'overall', label: 'OVERALL GRADE', grade: 'A+', status: '우수' },
     { id: 'seo', label: 'SEO 최적화', grade: 'A', status: '양호' },
     { id: 'performance', label: '성능/로딩', grade: 'B+', status: '개선 권장' },
     { id: 'accessibility', label: '접근성', grade: 'A', status: '양호' },
     { id: 'security', label: '보안', grade: 'A++', status: '우수' },
-    { id: 'pwa', label: 'PWA 지원', grade: 'A', status: '양호' },
+    { id: 'quality', label: '마크업/리소스', grade: qualityGrade.grade, status: qualityGrade.status },
     { id: 'mobile', label: '모바일 대응', grade: 'A+', status: '우수' },
     { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 필요' },
     { id: 'script', label: '스크립트 리소스', grade: 'B', status: '개선 권장' },

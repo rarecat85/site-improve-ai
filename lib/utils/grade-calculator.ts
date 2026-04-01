@@ -34,6 +34,7 @@ export interface GradeCalculatorInput {
   lighthouse: any
   axe: any
   aiseo?: { overallScore?: number; grade?: string }
+  qualityAudit?: { semanticScore?: number | null; efficiencyScore?: number | null } | null
   pageStats?: PageStatsSummary | null
   responseMeta?: ResponseMetaSummary | null
 }
@@ -177,18 +178,6 @@ function scriptCluster100(lhr: any, perfCat: number | null): number {
   return perfCat ?? 70
 }
 
-function pwaScore100(lhr: any): number | null {
-  const cat = lhScore(lhr?.categories?.pwa)
-  if (cat != null) return cat
-  const fallback = avgAuditScores(lhr, [
-    'installable-manifest',
-    'service-worker',
-    'splash-screen',
-    'themed-omnibox',
-  ])
-  return fallback
-}
-
 /**
  * 대시보드 카드 10종 + 전체 점수
  */
@@ -206,7 +195,10 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
   const axeAdj = accLh != null ? Math.max(0, accLh - axePenalty100(violations)) : null
   const accessibility = axeAdj ?? accLh ?? 70
 
-  const pwa = pwaScore100(lhr)
+  const qualityScore =
+    input.qualityAudit?.semanticScore != null && input.qualityAudit?.efficiencyScore != null
+      ? Math.round((input.qualityAudit.semanticScore + input.qualityAudit.efficiencyScore) / 2)
+      : input.qualityAudit?.semanticScore ?? input.qualityAudit?.efficiencyScore ?? null
   const security = securityCombined100(lhr, input.responseMeta)
   const mobile = mobileCombined100(lhr)
   const image = imageCluster100(lhr, perf)
@@ -228,7 +220,7 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
   pushOverall(accessibility)
   pushOverall(bp)
   pushOverall(security)
-  pushOverall(pwa)
+  pushOverall(qualityScore ?? null)
   pushOverall(mobile)
   pushOverall(image)
   pushOverall(script)
@@ -262,7 +254,7 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
     card('performance', '성능/로딩', perf, 'Lighthouse 미실행'),
     card('accessibility', '접근성', accLh == null && axeAdj == null ? null : accessibility, '데이터 없음'),
     card('security', '보안', security),
-    card('pwa', 'PWA 지원', pwa ?? null, 'PWA 감사 없음'),
+    card('quality', '마크업/리소스', qualityScore ?? null, '데이터 없음'),
     card('mobile', '모바일 대응', mobile, '데이터 없음'),
     card('image', '이미지 최적화', image),
     card('script', '스크립트 리소스', script),

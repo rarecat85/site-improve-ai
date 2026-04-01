@@ -418,6 +418,127 @@ axe-core 발견 이슈 수: ${axeSummary}
 const REPORT_CATEGORIES = ['SEO', '접근성', '성능', '모범사례', 'AEO/GEO'] as const
 type ReportCategory = (typeof REPORT_CATEGORIES)[number]
 
+function deriveUxImprovementsFromQualityAudit(
+  qa: { findings: string[]; metrics: Record<string, number | undefined> },
+  options: { scopeMode: 'all' | 'content' }
+): any[] {
+  const m = qa.metrics || {}
+  const out: any[] = []
+
+  const push = (item: any) => {
+    if (out.length >= 3) return
+    out.push(item)
+  }
+
+  const main = Number(m.mainLandmarks ?? 0)
+  const h1 = Number(m.headingH1 ?? 0)
+  const skips = Number(m.headingSkips ?? 0)
+  const domNodes = Number(m.domNodes ?? 0)
+  const depth = Number(m.domMaxDepth ?? 0)
+  const textlessLinks = Number(m.textlessLinks ?? 0)
+  const textlessButtons = Number(m.textlessButtons ?? 0)
+  const unusedJs = Number(m.unusedJsBytes ?? 0)
+  const unusedCss = Number(m.unusedCssBytes ?? 0)
+
+  if (main === 0) {
+    push({
+      title: '본문 랜드마크(main) 구조 정리',
+      category: 'UX/UI',
+      priority: 'high',
+      impact: '높음',
+      difficulty: '보통',
+      scope: 'content',
+      description:
+        '페이지의 핵심 콘텐츠 영역이 `main`(또는 `role="main"`)으로 명확히 구분되지 않아 탐색성이 떨어질 수 있습니다. 본문 컨테이너를 `main`으로 감싸고, 페이지당 `main`은 1개만 유지하세요.',
+      codeExample: '<main>...주요 콘텐츠...</main>',
+      source: 'quality-audit · landmark',
+      matchesRequirement: false,
+      requirementRelevance: '요구사항과 직접 연결되진 않지만 기본 구조/접근성 품질을 높입니다.',
+      priorityReason: '보조기기/키보드 탐색 흐름에 직접 영향을 줄 수 있음',
+    })
+  }
+
+  if (h1 === 0 || h1 > 1 || skips > 0) {
+    const detail =
+      h1 === 0
+        ? '최상위 제목(h1)이 없거나'
+        : h1 > 1
+          ? '최상위 제목(h1)이 여러 개이거나'
+          : '헤딩 단계가 건너뛰는 구간이 있어'
+    push({
+      title: '헤딩 계층 구조(제목) 정리',
+      category: 'UX/UI',
+      priority: 'medium',
+      impact: '중간',
+      difficulty: '쉬움',
+      scope: 'content',
+      description:
+        `${detail} 문서 구조가 흐트러질 수 있습니다. 페이지당 h1은 1개를 권장하고, 섹션별 h2/h3가 자연스럽게 이어지도록 순서를 정리하세요.`,
+      codeExample: '<h1>페이지 핵심 제목</h1>\n<h2>섹션</h2>\n<h3>하위 섹션</h3>',
+      source: 'quality-audit · headings',
+      matchesRequirement: false,
+      requirementRelevance: '요구사항과 직접 연결되진 않지만 가독성과 탐색성을 개선합니다.',
+      priorityReason: '정보 구조가 명확해지면 스캔/이해/검색 엔진 해석에 유리',
+    })
+  }
+
+  if (textlessLinks > 0 || textlessButtons > 0) {
+    push({
+      title: '아이콘 링크/버튼의 이름(라벨) 보강',
+      category: 'UX/UI',
+      priority: 'high',
+      impact: '높음',
+      difficulty: '쉬움',
+      scope: 'content',
+      description:
+        '텍스트가 없는 링크/버튼은 사용자(특히 보조기기)가 기능을 이해하기 어렵습니다. 아이콘만 있는 CTA에는 보이는 텍스트를 추가하거나 `aria-label`로 명확한 이름을 부여하세요.',
+      codeExample: '<button aria-label="검색 열기">...</button>',
+      source: 'quality-audit · label',
+      matchesRequirement: false,
+      requirementRelevance: '요구사항과 직접 연결되진 않지만 접근성과 UX 명확성이 크게 좋아집니다.',
+      priorityReason: '상호작용 요소의 의미 전달 실패는 사용성 저하로 이어짐',
+    })
+  }
+
+  if (out.length < 3 && (domNodes >= 1500 || depth >= 32)) {
+    push({
+      title: '불필요한 래퍼 DOM 줄이기',
+      category: 'UX/UI',
+      priority: 'medium',
+      impact: '중간',
+      difficulty: '어려움',
+      scope: 'content',
+      description:
+        'DOM 규모/깊이가 큰 편이라 렌더링·스타일 계산 비용이 커질 수 있습니다. 반복 래퍼(div)·중첩 구조를 정리하고, 필요한 컨테이너만 남겨 구조를 단순화하세요.',
+      source: 'quality-audit · dom-size',
+      codeExample: '',
+      matchesRequirement: false,
+      requirementRelevance: '요구사항과 직접 연결되진 않지만 성능/유지보수성에 영향을 줄 수 있습니다.',
+      priorityReason: 'DOM이 과도하면 스타일/레이아웃 비용이 누적될 수 있음',
+    })
+  }
+
+  if (out.length < 3 && (unusedJs >= 150_000 || unusedCss >= 80_000)) {
+    push({
+      title: '초기 로드 리소스(미사용 JS/CSS) 줄이기',
+      category: 'UX/UI',
+      priority: 'medium',
+      impact: '중간',
+      difficulty: '어려움',
+      scope: options.scopeMode === 'content' ? 'content' : 'global',
+      description:
+        '초기 로드 시 사용되지 않는 JS/CSS가 감지되었습니다. 라우트/컴포넌트 단위 코드 스플리팅, 조건부 로딩, 사용하지 않는 스타일 제거로 초기 로드 비용을 줄이세요.',
+      source: 'quality-audit · unused-bytes',
+      codeExample: '',
+      matchesRequirement: false,
+      requirementRelevance: '요구사항과 직접 연결되진 않지만 초기 로딩/반응성에 영향을 줄 수 있습니다.',
+      priorityReason: '불필요한 리소스는 로딩/실행 비용을 증가시킴',
+    })
+  }
+
+  return out
+}
+
 /** 카테고리별 분석 결과 텍스트만 조합 (해당 카테고리에 필요한 데이터만) */
 function buildCategoryPromptContent(
   category: ReportCategory,
@@ -693,19 +814,33 @@ export async function generateReport(
       requirementAlignment: `요구사항 부합 ${allImprovements.filter((i) => i.matchesRequirement).length}건, 기본 분석 ${allImprovements.filter((i) => !i.matchesRequirement).length}건 포함.`,
     }
 
-    const parsed: any = { improvements: allImprovements, summary }
-
-    const { cards, overallScore100 } = computeDashboardGrades({
-      lighthouse: analysisResults.lighthouse,
-      axe: analysisResults.axe,
-      aiseo: analysisResults.aiseo,
-      pageStats: analysisResults.pageStats,
-      responseMeta: analysisResults.responseMeta,
-    })
-    parsed.dashboard = { cards, overallScore100 }
     const scopeMode: 'all' | 'content' =
       analyzedUrl && isLocalhostUrl(analyzedUrl) ? 'content' : 'all'
     const qualityAudit = buildQualityAudit({ analysisResults, analyzedUrl, scopeMode })
+    if (qualityAudit) {
+      allImprovements.push(
+        ...deriveUxImprovementsFromQualityAudit(qualityAudit, { scopeMode })
+      )
+    }
+
+    // derived UX/UI 개선안을 포함한 뒤 다시 정렬/요약 계산
+    allImprovements.sort((a, b) => {
+      if (a.matchesRequirement !== b.matchesRequirement) return a.matchesRequirement ? -1 : 1
+      return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
+    })
+
+    const byCategory2: Record<string, number> = { SEO: 0, 접근성: 0, 'UX/UI': 0, 성능: 0, 모범사례: 0, 'AEO/GEO': 0 }
+    allImprovements.forEach((i) => {
+      const c = normalizeCategory(i.category, i.source)
+      byCategory2[c] = (byCategory2[c] ?? 0) + 1
+    })
+    summary.byCategory = byCategory2
+    summary.totalIssues = allImprovements.length
+    summary.highPriority = allImprovements.filter((i) => i.priority === 'high').length
+    summary.requirementAlignment = `요구사항 부합 ${allImprovements.filter((i) => i.matchesRequirement).length}건, 기본 분석 ${allImprovements.filter((i) => !i.matchesRequirement).length}건 포함.`
+
+    const parsed: any = { improvements: allImprovements, summary }
+
     if (qualityAudit) {
       parsed.qualityAudit = {
         semanticScore: qualityAudit.semanticScore,
@@ -714,6 +849,18 @@ export async function generateReport(
         metrics: qualityAudit.metrics,
       }
     }
+
+    const { cards, overallScore100 } = computeDashboardGrades({
+      lighthouse: analysisResults.lighthouse,
+      axe: analysisResults.axe,
+      aiseo: analysisResults.aiseo,
+      qualityAudit: qualityAudit
+        ? { semanticScore: qualityAudit.semanticScore, efficiencyScore: qualityAudit.efficiencyScore }
+        : null,
+      pageStats: analysisResults.pageStats,
+      responseMeta: analysisResults.responseMeta,
+    })
+    parsed.dashboard = { cards, overallScore100 }
     if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats
     if (analysisResults.crux != null) parsed.crux = analysisResults.crux
     if (analysisResults.responseMeta) parsed.responseMeta = analysisResults.responseMeta
