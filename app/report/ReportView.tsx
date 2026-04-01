@@ -451,30 +451,6 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         </div>
       </section>
 
-      {reportData.qualityAudit && reportData.qualityAudit.findings?.length > 0 && (
-        <section className={styles.sectionBlock} aria-label="마크업·리소스 품질 점검">
-          <h2 className={styles.sectionTitle}>마크업·리소스 품질 점검</h2>
-          <div className={styles.sectionBox}>
-            <p className={styles.sectionText} style={{ marginBottom: '0.75rem' }}>
-              {reportData.qualityAudit.semanticScore != null || reportData.qualityAudit.efficiencyScore != null
-                ? `시멘틱/구조 ${reportData.qualityAudit.semanticScore ?? '—'} · 효율성 ${
-                    reportData.qualityAudit.efficiencyScore ?? '—'
-                  } (0~100)`
-                : '분석 시점의 렌더 결과를 기준으로 간단한 규칙 점검을 수행했습니다.'}
-            </p>
-            <ul className={styles.archSummaryList} style={{ margin: 0 }}>
-              {reportData.qualityAudit.findings.slice(0, 6).map((t, i) => (
-                <li key={i} className={styles.archSummaryCard} style={{ marginBottom: '0.75rem' }}>
-                  <p className={styles.archSummaryBody} style={{ margin: 0 }}>
-                    {t}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
-      )}
-
       {reportData.contentSummary && (
         <section className={styles.sectionBlock} aria-label="사이트 목적 분석">
           <h2 className={styles.sectionTitle}>사이트 목적 분석</h2>
@@ -534,6 +510,26 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                 </a>
               </div>
             ))}
+          </div>
+        </section>
+      )}
+
+      {reportData.qualityAudit && reportData.qualityAudit.findings?.length > 0 && (
+        <section className={styles.sectionBlock} aria-label="마크업·리소스 품질 점검">
+          <h2 className={styles.sectionTitle}>마크업·리소스 품질 점검</h2>
+          <div className={styles.sectionBox}>
+            <p className={styles.sectionText}>
+              이 섹션은 분석 시점에 브라우저가 렌더링한 결과(HTML/리소스 로드)를 기준으로, 마크업의 구조적 완성도와
+              리소스 효율성을 간단한 규칙으로 점검한 요약입니다.
+              {reportData.qualityAudit.semanticScore != null || reportData.qualityAudit.efficiencyScore != null
+                ? ` 현재 신호 기준으로는 시멘틱/구조가 ${reportData.qualityAudit.semanticScore ?? '—'}점, 효율성이 ${
+                    reportData.qualityAudit.efficiencyScore ?? '—'
+                  }점(0~100)으로 추정됩니다.`
+                : ''}
+            </p>
+            <p className={styles.sectionText} style={{ marginTop: '0.75rem', marginBottom: 0 }}>
+              {reportData.qualityAudit.findings.slice(0, 6).join(' ')}
+            </p>
           </div>
         </section>
       )}
