@@ -41,6 +41,21 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
     requirementAlignment:
       '입력하신 우선순위(SEO, 성능, 접근성)와 직접 관련된 4건을 높은 우선순위로 선정했습니다.',
   },
+  qualityAudit: {
+    semanticScore: 86,
+    efficiencyScore: 72,
+    findings: [
+      '`main` 랜드마크가 1개로 감지되어 문서 구조 탐색이 비교적 명확합니다.',
+      '헤딩 단계가 전반적으로 자연스럽지만, 일부 구간에서 단계 건너뛰기(예: H2→H4)가 있을 수 있습니다.',
+      '미사용 JS가 감지되어 초기 로드 번들 분리/지연 로딩 여지가 있습니다.',
+    ],
+    metrics: {
+      domNodes: 980,
+      domMaxDepth: 28,
+      unusedJsBytes: 210000,
+      unusedCssBytes: 65000,
+    },
+  },
   improvements: [
     {
       title: '메타 설명 길이 최적화',

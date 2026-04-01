@@ -33,6 +33,16 @@ export interface ReportData {
     priorityCriteria?: string
     requirementAlignment?: string
   }
+  /**
+   * 마크업 시멘틱/DOM 규모/리소스 효율성 등 “렌더 결과” 기준의 규칙 기반 점검 요약.
+   * (원본 코드 품질을 단정하지 않으며, 분석 시점의 결과에 의존)
+   */
+  qualityAudit?: {
+    semanticScore?: number | null
+    efficiencyScore?: number | null
+    findings: string[]
+    metrics?: Record<string, number | undefined>
+  }
   contentSummary?: string
   /**
    * 올드 리포트(IndexedDB·localStorage) 호환용. 신규 분석은 아래 audience* 필드만 채움.

@@ -451,6 +451,30 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         </div>
       </section>
 
+      {reportData.qualityAudit && reportData.qualityAudit.findings?.length > 0 && (
+        <section className={styles.sectionBlock} aria-label="마크업·리소스 품질 점검">
+          <h2 className={styles.sectionTitle}>마크업·리소스 품질 점검</h2>
+          <div className={styles.sectionBox}>
+            <p className={styles.sectionText} style={{ marginBottom: '0.75rem' }}>
+              {reportData.qualityAudit.semanticScore != null || reportData.qualityAudit.efficiencyScore != null
+                ? `시멘틱/구조 ${reportData.qualityAudit.semanticScore ?? '—'} · 효율성 ${
+                    reportData.qualityAudit.efficiencyScore ?? '—'
+                  } (0~100)`
+                : '분석 시점의 렌더 결과를 기준으로 간단한 규칙 점검을 수행했습니다.'}
+            </p>
+            <ul className={styles.archSummaryList} style={{ margin: 0 }}>
+              {reportData.qualityAudit.findings.slice(0, 6).map((t, i) => (
+                <li key={i} className={styles.archSummaryCard} style={{ marginBottom: '0.75rem' }}>
+                  <p className={styles.archSummaryBody} style={{ margin: 0 }}>
+                    {t}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
       {reportData.contentSummary && (
         <section className={styles.sectionBlock} aria-label="사이트 목적 분석">
           <h2 className={styles.sectionTitle}>사이트 목적 분석</h2>

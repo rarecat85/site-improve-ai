@@ -11,6 +11,7 @@ import { computeDashboardGrades, formatResponseMetaForPrompt } from '@/lib/utils
 import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
 import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
+import { buildQualityAudit } from '@/lib/utils/quality-audit'
 import type {
   ArchitectureSectionSnippet,
   PageArchitectureSectionSummary,
@@ -702,6 +703,17 @@ export async function generateReport(
       responseMeta: analysisResults.responseMeta,
     })
     parsed.dashboard = { cards, overallScore100 }
+    const scopeMode: 'all' | 'content' =
+      analyzedUrl && isLocalhostUrl(analyzedUrl) ? 'content' : 'all'
+    const qualityAudit = buildQualityAudit({ analysisResults, analyzedUrl, scopeMode })
+    if (qualityAudit) {
+      parsed.qualityAudit = {
+        semanticScore: qualityAudit.semanticScore,
+        efficiencyScore: qualityAudit.efficiencyScore,
+        findings: qualityAudit.findings,
+        metrics: qualityAudit.metrics,
+      }
+    }
     if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats
     if (analysisResults.crux != null) parsed.crux = analysisResults.crux
     if (analysisResults.responseMeta) parsed.responseMeta = analysisResults.responseMeta

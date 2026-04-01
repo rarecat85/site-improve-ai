@@ -249,6 +249,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
 
     let domForArchitecture: string | undefined
     let screenshotFinalB64 = screenshotEarly
+    let markupStats: AnalysisResults['markupStats'] | undefined
 
     try {
       console.log('Settling DOM for page architecture + aligned screenshot (2차)...')
@@ -288,6 +289,72 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       console.log('[analyzer] Screenshot & architecture input fall back to 1st snapshot')
     }
 
+    try {
+      markupStats = await page.evaluate(() => {
+        const root = document.documentElement
+        let domNodes = 0
+        let maxDepth = 0
+        const stack: Array<{ el: Element; depth: number }> = root ? [{ el: root, depth: 1 }] : []
+        while (stack.length) {
+          const cur = stack.pop()!
+          domNodes++
+          if (cur.depth > maxDepth) maxDepth = cur.depth
+          const children = Array.from(cur.el.children || [])
+          for (let i = 0; i < children.length; i++) {
+            stack.push({ el: children[i]!, depth: cur.depth + 1 })
+          }
+        }
+
+        const count = (sel: string) => document.querySelectorAll(sel).length
+        const landmarks = {
+          main: count('main,[role="main"]'),
+          nav: count('nav,[role="navigation"]'),
+          header: count('header,[role="banner"]'),
+          footer: count('footer,[role="contentinfo"]'),
+        }
+
+        const headings = {
+          h1: count('h1'),
+          h2: count('h2'),
+          h3: count('h3'),
+          h4: count('h4'),
+          h5: count('h5'),
+          h6: count('h6'),
+          skippedLevels: 0,
+        }
+
+        try {
+          const hs = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6')) as HTMLElement[]
+          let prev: number | null = null
+          for (const h of hs) {
+            const lvl = Number(h.tagName.slice(1))
+            if (prev != null && lvl > prev + 1) headings.skippedLevels += 1
+            prev = lvl
+          }
+        } catch {
+          /* ignore */
+        }
+
+        const isTextless = (el: Element): boolean => {
+          const aria = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || ''
+          const t = (el.textContent || '').replace(/\s+/g, ' ').trim()
+          return !t && !aria
+        }
+        const links = Array.from(document.querySelectorAll('a[href]')).filter(isTextless).length
+        const buttons = Array.from(document.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')).filter(isTextless).length
+
+        return {
+          domNodes,
+          maxDepth,
+          landmarks,
+          headings,
+          textlessInteractive: { links, buttons },
+        }
+      })
+    } catch (e) {
+      console.warn('[analyzer] markupStats collection failed:', e)
+    }
+
     await browser.close()
     browser = null
 
@@ -297,6 +364,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       screenshot: `data:image/png;base64,${screenshotFinalB64}`,
       dom: html,
       domForArchitecture,
+      markupStats,
       metadata,
       pageText: pageText || undefined,
       pageStats,
