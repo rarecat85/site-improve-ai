@@ -235,7 +235,15 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     const reasons: string[] = []
 
     // 1) 카테고리 강점(이슈가 더 적은 쪽)을 최대 2개까지 선택
-    const catCandidates = (['SEO', '접근성', '성능', '모범사례', 'Security', 'AEO/GEO', 'UX/UI'] as const)
+    const catCandidates = ([
+      'SEO',
+      '접근성',
+      '성능',
+      '모범사례',
+      ...(localhostMode ? [] : (['Security'] as const)),
+      'AEO/GEO',
+      'UX/UI',
+    ] as const)
       .map((cat) => {
         const cw = compareCategoryWinner(metricsA, metricsB, cat)
         if (cw !== w) return null
@@ -312,15 +320,17 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         )
       }
     }
-    const sWin = securityScore100(winReport)
-    const sLose = securityScore100(loseReport)
-    if (sWin != null && sLose != null && sWin !== sLose) {
-      const better = sWin > sLose ? winName : loseName
-      const delta = Math.abs(sWin - sLose)
-      if (better === winName && delta >= 5) {
-        reasons.push(
-          `${winName}는 보안 상세 점검(Security) 점수가 상대적으로 더 높아, 헤더/정책/스크립트 구성 측면의 리스크 신호가 더 적습니다.`
-        )
+    if (!localhostMode) {
+      const sWin = securityScore100(winReport)
+      const sLose = securityScore100(loseReport)
+      if (sWin != null && sLose != null && sWin !== sLose) {
+        const better = sWin > sLose ? winName : loseName
+        const delta = Math.abs(sWin - sLose)
+        if (better === winName && delta >= 5) {
+          reasons.push(
+            `${winName}는 보안 상세 점검(Security) 점수가 상대적으로 더 높아, 헤더/정책/스크립트 구성 측면의 리스크 신호가 더 적습니다.`
+          )
+        }
       }
     }
 
@@ -359,11 +369,11 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
 
   const categoriesAll = [...CATEGORY_ORDER, '기타'] as const
   /**
-   * 로컬호스트가 포함되면 전역 템플릿/배포 환경 설정(SEO·AEO/GEO·Security·모범사례) 성격의 판단이 왜곡될 수 있어
-   * By category 표에서는 해당 행을 숨긴다.
+   * 로컬호스트 포함 시에도 SEO/AEO·GEO/모범사례/품질 점검은 비교에 포함한다.
+   * 단, Security는 라이브 환경(헤더/TLS/정책/인프라)에 강하게 의존하므로 로컬호스트 비교에서는 제외한다.
    */
   const categories = (localhostMode
-    ? (['접근성', 'UX/UI', '성능', '기타'] as const)
+    ? (categoriesAll.filter((c) => c !== 'Security') as readonly string[])
     : categoriesAll) as readonly string[]
 
   return (
@@ -542,26 +552,27 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
               </tr>
             </thead>
             <tbody>
+              {/* 로컬호스트 비교에서는 Security만 제외하고, 품질 점검은 포함 */}
+              <tr
+                className={
+                  previewWinner !== 'tie' && winQuality === previewWinner
+                    ? styles.byCategoryRowOverallWin
+                    : undefined
+                }
+              >
+                <td>마크업/리소스(품질 점검)</td>
+                <td className={winQuality === 'a' ? styles.cellWin : styles.cellMuted}>
+                  {qualityScore100(reportA) != null ? `${qualityScore100(reportA)}` : '—'} / —
+                </td>
+                <td className={winQuality === 'b' ? styles.cellWin : styles.cellMuted}>
+                  {qualityScore100(reportB) != null ? `${qualityScore100(reportB)}` : '—'} / —
+                </td>
+                <td className={styles.verdictCol}>
+                  <Verdict w={winQuality} />
+                </td>
+              </tr>
               {!localhostMode ? (
                 <>
-                  <tr
-                    className={
-                      previewWinner !== 'tie' && winQuality === previewWinner
-                        ? styles.byCategoryRowOverallWin
-                        : undefined
-                    }
-                  >
-                    <td>마크업/리소스(품질 점검)</td>
-                    <td className={winQuality === 'a' ? styles.cellWin : styles.cellMuted}>
-                      {qualityScore100(reportA) != null ? `${qualityScore100(reportA)}` : '—'} / —
-                    </td>
-                    <td className={winQuality === 'b' ? styles.cellWin : styles.cellMuted}>
-                      {qualityScore100(reportB) != null ? `${qualityScore100(reportB)}` : '—'} / —
-                    </td>
-                    <td className={styles.verdictCol}>
-                      <Verdict w={winQuality} />
-                    </td>
-                  </tr>
                   <tr
                     className={
                       previewWinner !== 'tie' && winSecurityScore === previewWinner
