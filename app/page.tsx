@@ -32,11 +32,9 @@ const FOCUS_OPTIONS: { id: string; label: string }[] = [
   { id: 'seo', label: 'SEO 최적화' },
   { id: 'performance', label: '성능·로딩' },
   { id: 'accessibility', label: '접근성' },
-  { id: 'security', label: '보안' },
-  { id: 'pwa', label: 'PWA 지원' },
-  { id: 'mobile', label: '모바일 대응' },
-  { id: 'image', label: '이미지 최적화' },
-  { id: 'script', label: '스크립트·리소스' },
+  { id: 'best', label: '모범사례' },
+  { id: 'security', label: 'Security' },
+  { id: 'quality', label: '마크업/리소스' },
   { id: 'geo', label: 'AEO/GEO (AI 검색 대응)' },
 ]
 

@@ -34,6 +34,7 @@ export interface GradeCalculatorInput {
   lighthouse: any
   axe: any
   aiseo?: { overallScore?: number; grade?: string }
+  securityAudit?: { score100?: number | null } | null
   qualityAudit?: { semanticScore?: number | null; efficiencyScore?: number | null } | null
   pageStats?: PageStatsSummary | null
   responseMeta?: ResponseMetaSummary | null
@@ -207,7 +208,10 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
     input.qualityAudit?.semanticScore != null && input.qualityAudit?.efficiencyScore != null
       ? Math.round((input.qualityAudit.semanticScore + input.qualityAudit.efficiencyScore) / 2)
       : input.qualityAudit?.semanticScore ?? input.qualityAudit?.efficiencyScore ?? null
-  const security = securityCombined100(lhr, input.responseMeta)
+  const security =
+    input.securityAudit?.score100 != null
+      ? Math.max(0, Math.min(100, Math.round(input.securityAudit.score100)))
+      : securityCombined100(lhr, input.responseMeta)
   const mobile = mobileCombined100(lhr)
   const image = imageCluster100(lhr, perf)
   const script = scriptCluster100(lhr, perf)

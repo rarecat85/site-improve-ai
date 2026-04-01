@@ -47,11 +47,9 @@ export async function POST(request: NextRequest) {
       seo: 'SEO 최적화',
       performance: '성능·로딩',
       accessibility: '접근성',
-      security: '보안',
-      pwa: 'PWA 지원',
-      mobile: '모바일 대응',
-      image: '이미지 최적화',
-      script: '스크립트·리소스',
+      best: '모범사례',
+      security: 'Security',
+      quality: '마크업/리소스',
       geo: 'AEO/GEO (AI 검색 대응)',
     }
     const priorityList = Array.isArray(priorities) ? priorities.slice(0, 3) : []

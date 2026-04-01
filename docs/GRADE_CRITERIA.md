@@ -55,18 +55,12 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 
 ### 보안
 
-1. 다음 Lighthouse 감사 점수의 **평균**(해당 감사가 없으면 그 항목은 제외):
-   - `is-on-https` (없으면 100으로 간주)
-   - `csp-xss` 또는 `content-security-policy`
-   - `no-vulnerable-libraries`
-2. 위 세 감사가 **하나도 없으면** 기본값 **75**에서 시작.
-3. 페이지 **초기 응답**의 보안 헤더 검사: 아래 4개 중 **빠진 헤더마다 8점** 감점.
-   - `strict-transport-security`
-   - `x-content-type-options`
-   - `x-frame-options`
-   - `content-security-policy`
-4. **HTTP 상태 코드가 400 이상**이면, 위에서 나온 점수와 관계없이 **최대 40점**으로 상한.
-5. 최종 점수는 0~100으로 클램프.
+기본적으로 `securityAudit`(규칙 기반 상세 점검) 결과를 우선 사용합니다.  
+상세 신호/규칙은 [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) 참고.
+
+1. `reportData.securityAudit.score100`가 있으면 그 점수(0~100)를 사용합니다.
+2. `securityAudit`가 없으면, 기존 폴백으로 Lighthouse/응답 메타 기반 점수(`securityCombined100`)를 사용합니다.
+3. 로컬호스트(`localhost`/`127.0.0.1`) 분석은 보안 점검을 생략할 수 있어, 등급이 **데이터 없음(`—`)** 으로 보일 수 있습니다.
 
 ### 마크업/리소스 (품질 점검)
 

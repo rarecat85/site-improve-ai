@@ -44,6 +44,7 @@ const TAB_LABELS: Record<string, string> = {
   '성능': 'Performance',
   '모범사례': 'Best Practices',
   'UX/UI': 'UX/UI',
+  Security: 'Security',
   '기타': 'Other',
 }
 

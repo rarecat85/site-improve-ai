@@ -15,6 +15,7 @@
 | `UX/UI` | UX/UI | 아래 **분류 규칙**상 UX/UI로 묶인 항목 |
 | `성능` | Performance | 성능 전담 개선안 |
 | `모범사례` | Best Practices | 모범사례 전담 개선안 |
+| `Security` | Security | **보안 점검(규칙 기반) + 개선안** |
 | `AEO/GEO` | AEO/GEO | AEO/GEO 전담 개선안 + **aiseo-audit 요약 카드** |
 | `기타` | Other | 표준 7개 카테고리에 속하지 않는 항목만 |
 
@@ -31,6 +32,9 @@
 2. 각 호출은 `improvements` 배열(JSON)을 반환하고, 항목에 `category`·`source` 등을 붙인 뒤 **한 리스트로 합칩니다**.
 3. 정렬: **`matchesRequirement === true` 가 앞**, 그다음 **`priority`** (`high` → `medium` → `low`).
 4. `summary.byCategory` 등은 `normalizeCategory`로 건수를 셉니다.
+5. **추가(규칙 기반 파생 개선안)**:
+   - `qualityAudit` 신호로부터 UX/UI 개선안을 일부 파생해 `improvements`에 추가할 수 있습니다.
+   - `securityAudit` 신호로부터 Security 개선안을 파생해 `improvements`에 추가할 수 있습니다.
 
 ### 2.2 모든 카테고리 프롬프트에 공통으로 들어가는 컨텍스트 (`metaLines`)
 
@@ -62,9 +66,10 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 클라이언트는 **`getCategory(Improvement)`** 로 탭을 결정합니다.
 
 1. `item.category`가 이미 `CATEGORY_ORDER` 안의 문자열이면 **그대로** 사용.  
-   `CATEGORY_ORDER` = `['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO']`
+   `CATEGORY_ORDER` = `['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'Security', 'AEO/GEO']`
 2. 아니면 **`source` 문자열**으로 추정:
    - `aiseo` / `aeo` / `geo` → **AEO/GEO**
+   - `security` / `보안` → **Security**
    - `seo` → **SEO**
    - `접근성` / `axe-core` / `accessibility` → **접근성**
    - `성능` / `performance` → **성능**
@@ -92,9 +97,18 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 
 공통 제약(프롬프트): **Lighthouse/axe/aiseo 목록에 없는 이슈를 지어내지 말 것**, `source`는 `Lighthouse · …`, `axe-core · …`, `aiseo-audit · …` 형태 권장.
 
+### 4.3 Security 탭(규칙 기반 보안 점검)
+
+Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과에서 수집한 신호(응답 헤더/리다이렉트/클라이언트 스크립트)를 바탕으로 **규칙 기반**으로 도출됩니다.
+
+- 보안 점검 문서: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
+- 개선 항목 `source` 예: `security-audit · csp-missing`
+
 ### 4.2 로컬호스트(개발/스테이징) URL의 개선안 생성 정책
 
 분석 대상 URL이 `localhost` 또는 `127.0.0.1`이면, 리포트 생성 프롬프트에서 **전역 템플릿/공통 레이아웃 및 `<head>` 메타·구조화 데이터(JSON-LD) 관련 개선안은 되도록 제외**하도록 지시합니다. 대신 가능한 한 `<main>`·본문에서 해결 가능한 항목(`scope=content`)을 우선 제시하도록 유도합니다.
+
+추가로, **보안(Security) 상세 점검은 로컬호스트에서는 생략**될 수 있습니다(배포 환경에 좌우되는 요소가 많기 때문).
 
 ### 4.1 Lighthouse 요약이 만들어지는 방식 (`buildLighthouseSummary`)
 
@@ -129,7 +143,8 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 - `normalizeCategory` 결과가 `UX/UI`로 남은 경우, 또는  
 - `getCategory`가 **`source`/category** 로 다른 표준 카테고리에 못 넣고 **`UX/UI`로 떨어진 경우**입니다.
 
-실제 데이터는 대부분 위 5개 전담 + AEO/GEO에 맞춰 나오므로, **UX/UI 탭은 종종 비어 있을 수 있습니다.**
+실제 데이터는 대부분 위 5개 전담 + AEO/GEO에 맞춰 나오므로, **UX/UI 탭은 종종 비어 있을 수 있습니다.**  
+단, `qualityAudit` 신호가 있을 때는 일부 UX/UI 개선안이 **규칙 기반으로 파생**되어 표시될 수 있습니다.
 
 ---
 

@@ -32,6 +32,31 @@ export interface AnalysisResults {
   pageStats?: PageStatsSummary
   /** 문서 응답 메타(보안 헤더 등) */
   responseMeta?: ResponseMetaSummary | null
+  /**
+   * 보안 상세 점검을 위한 원천 데이터(분석 시점 기준).
+   * 로컬호스트(개발/스테이징) URL에서는 생성하지 않을 수 있습니다.
+   */
+  securitySignals?: {
+    finalUrl?: string
+    initialUrl?: string
+    isHttps?: boolean
+    redirectChain?: string[]
+    responseHeaders?: Record<string, string>
+    clientScripts?: {
+      thirdPartyScriptDomains: string[]
+      thirdPartyScriptCount: number
+      inlineScriptCount: number
+      inlineEventHandlerAttrCount: number
+    }
+  }
+  /** 모바일 사용성/레이아웃 점검용 신호(규칙 기반 파생 개선안에 사용) */
+  mobileSignals?: {
+    viewportMeta?: string
+    hasHorizontalOverflow?: boolean
+    smallTextCount?: number
+    tapTargetsTooSmallCount?: number
+    tapTargetsOverlappingCount?: number
+  }
   /** 설정 시 병합 (CrUX API) */
   crux?: CruxSummary | null
 }

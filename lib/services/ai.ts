@@ -12,6 +12,8 @@ import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
 import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
 import { buildQualityAudit } from '@/lib/utils/quality-audit'
+import { buildSecurityAudit, deriveSecurityImprovementsFromAudit } from '@/lib/utils/security-audit'
+import { deriveMobileImprovements } from '@/lib/utils/mobile-audit'
 import type {
   ArchitectureSectionSnippet,
   PageArchitectureSectionSummary,
@@ -708,8 +710,9 @@ ${getCategoryJsonRules(category)}`
 function normalizeCategory(category?: string, source?: string): string {
   const c = (category || '').trim()
   const s = (source || '').toLowerCase()
-  if (['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'AEO/GEO'].includes(c)) return c
+  if (['SEO', '접근성', 'UX/UI', '성능', '모범사례', 'Security', 'AEO/GEO'].includes(c)) return c
   if (s.includes('aiseo') || s.includes('aeo') || s.includes('geo')) return 'AEO/GEO'
+  if (s.includes('security') || s.includes('보안')) return 'Security'
   if (s.includes('seo')) return 'SEO'
   if (s.includes('접근성') || s.includes('axe-core') || s.includes('accessibility')) return '접근성'
   if (s.includes('성능') || s.includes('performance')) return '성능'
@@ -823,13 +826,26 @@ export async function generateReport(
       )
     }
 
+    const securityAudit =
+      analyzedUrl && isLocalhostUrl(analyzedUrl)
+        ? null
+        : analyzedUrl
+          ? buildSecurityAudit({ analysisResults, analyzedUrl })
+          : null
+    if (securityAudit) {
+      allImprovements.push(...deriveSecurityImprovementsFromAudit(securityAudit))
+    }
+
+    // 모바일 대응(규칙 기반) — 별도 탭을 만들지 않고 기존 카테고리(주로 UX/UI)에 포함
+    allImprovements.push(...deriveMobileImprovements(analysisResults))
+
     // derived UX/UI 개선안을 포함한 뒤 다시 정렬/요약 계산
     allImprovements.sort((a, b) => {
       if (a.matchesRequirement !== b.matchesRequirement) return a.matchesRequirement ? -1 : 1
       return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
     })
 
-    const byCategory2: Record<string, number> = { SEO: 0, 접근성: 0, 'UX/UI': 0, 성능: 0, 모범사례: 0, 'AEO/GEO': 0 }
+    const byCategory2: Record<string, number> = { SEO: 0, 접근성: 0, 'UX/UI': 0, 성능: 0, 모범사례: 0, Security: 0, 'AEO/GEO': 0 }
     allImprovements.forEach((i) => {
       const c = normalizeCategory(i.category, i.source)
       byCategory2[c] = (byCategory2[c] ?? 0) + 1
@@ -849,11 +865,20 @@ export async function generateReport(
         metrics: qualityAudit.metrics,
       }
     }
+    if (securityAudit) {
+      parsed.securityAudit = {
+        score100: securityAudit.score100,
+        findings: securityAudit.findings,
+        issues: securityAudit.issues,
+        signals: securityAudit.signals,
+      }
+    }
 
     const { cards, overallScore100 } = computeDashboardGrades({
       lighthouse: analysisResults.lighthouse,
       axe: analysisResults.axe,
       aiseo: analysisResults.aiseo,
+      securityAudit: securityAudit ? { score100: securityAudit.score100 } : null,
       qualityAudit: qualityAudit
         ? { semanticScore: qualityAudit.semanticScore, efficiencyScore: qualityAudit.efficiencyScore }
         : null,

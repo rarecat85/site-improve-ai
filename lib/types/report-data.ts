@@ -43,6 +43,23 @@ export interface ReportData {
     findings: string[]
     metrics?: Record<string, number | undefined>
   }
+  /**
+   * 보안 상세 점검(헤더/리다이렉트/클라이언트 신호) — 규칙 기반 결과.
+   * 로컬호스트(개발/스테이징) URL에서는 생략될 수 있습니다.
+   */
+  securityAudit?: {
+    score100?: number | null
+    findings: string[]
+    issues?: Array<{
+      id: string
+      severity: 'high' | 'medium' | 'low'
+      title: string
+      evidence?: string
+      recommendation: string
+      scope: 'global' | 'content'
+    }>
+    signals?: Record<string, unknown>
+  }
   contentSummary?: string
   /**
    * 올드 리포트(IndexedDB·localStorage) 호환용. 신규 분석은 아래 audience* 필드만 채움.

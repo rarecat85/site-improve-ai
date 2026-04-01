@@ -229,6 +229,37 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       timeout: 20000, // 타임아웃 단축
     })
     const responseMeta = extractResponseMeta(gotoResponse)
+    const securitySignals: AnalysisResults['securitySignals'] = {}
+    try {
+      securitySignals.initialUrl = url
+      securitySignals.finalUrl = gotoResponse?.url?.() || undefined
+      const final = securitySignals.finalUrl || url
+      try {
+        securitySignals.isHttps = new URL(final).protocol === 'https:'
+      } catch {
+        securitySignals.isHttps = final.startsWith('https://')
+      }
+      // redirectChain: earliest -> latest (finalUrl 제외)
+      const chain = gotoResponse?.request?.()?.redirectChain?.() || []
+      const urls = chain.map((r: any) => {
+        try {
+          return r?.url?.()
+        } catch {
+          return ''
+        }
+      }).filter(Boolean)
+      securitySignals.redirectChain = urls.length ? urls : undefined
+      const hdrs = gotoResponse?.headers?.() || {}
+      const lower: Record<string, string> = {}
+      for (const [k, v] of Object.entries(hdrs)) {
+        const key = String(k || '').toLowerCase()
+        if (!key) continue
+        lower[key] = String(v ?? '')
+      }
+      securitySignals.responseHeaders = Object.keys(lower).length ? lower : undefined
+    } catch {
+      /* ignore */
+    }
 
     await scrollPageForLazyContent(page)
 
@@ -355,6 +386,129 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       console.warn('[analyzer] markupStats collection failed:', e)
     }
 
+    let mobileSignals: AnalysisResults['mobileSignals'] | undefined
+    try {
+      mobileSignals = await page.evaluate(() => {
+        const viewport = document.querySelector('meta[name="viewport"]')?.getAttribute('content') || ''
+
+        let hasHorizontalOverflow = false
+        try {
+          const doc = document.documentElement
+          hasHorizontalOverflow = (doc?.scrollWidth || 0) > (doc?.clientWidth || 0) + 4
+        } catch {
+          /* ignore */
+        }
+
+        // small text (computed font-size < 12px) — sample limited
+        let smallTextCount = 0
+        try {
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+          let n: Node | null
+          let sampled = 0
+          while ((n = walker.nextNode())) {
+            const t = (n.textContent || '').replace(/\s+/g, ' ').trim()
+            if (!t || t.length < 8) continue
+            const el = (n as any).parentElement as HTMLElement | null
+            if (!el) continue
+            sampled++
+            if (sampled > 600) break
+            const fs = Number.parseFloat(getComputedStyle(el).fontSize || '0')
+            if (Number.isFinite(fs) && fs > 0 && fs < 12) smallTextCount++
+          }
+        } catch {
+          /* ignore */
+        }
+
+        // tap targets — heuristic (44px)
+        let tapTargetsTooSmallCount = 0
+        let tapTargetsOverlappingCount = 0
+        try {
+          const sel = 'a[href], button, input, select, textarea, [role="button"]'
+          const els = Array.from(document.querySelectorAll(sel)).slice(0, 250) as HTMLElement[]
+          const rects: Array<{ r: DOMRect; el: HTMLElement }> = []
+          for (const el of els) {
+            const r = el.getBoundingClientRect()
+            if (!r || r.width <= 0 || r.height <= 0) continue
+            if (r.width < 44 || r.height < 44) tapTargetsTooSmallCount++
+            rects.push({ r, el })
+          }
+          for (let i = 0; i < rects.length; i++) {
+            for (let j = i + 1; j < rects.length; j++) {
+              const a = rects[i]!.r
+              const b = rects[j]!.r
+              const overlapX = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+              const overlapY = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+              if (overlapX > 0 && overlapY > 0) {
+                tapTargetsOverlappingCount++
+                if (tapTargetsOverlappingCount >= 30) break
+              }
+            }
+            if (tapTargetsOverlappingCount >= 30) break
+          }
+        } catch {
+          /* ignore */
+        }
+
+        return {
+          viewportMeta: viewport || undefined,
+          hasHorizontalOverflow,
+          smallTextCount,
+          tapTargetsTooSmallCount,
+          tapTargetsOverlappingCount,
+        }
+      })
+    } catch (e) {
+      console.warn('[analyzer] mobileSignals collection failed:', e)
+    }
+
+    try {
+      const clientScripts = await page.evaluate(() => {
+        const host = location.hostname
+        const scripts = Array.from(document.querySelectorAll('script')) as HTMLScriptElement[]
+        const inlineScriptCount = scripts.filter((s) => !s.src).length
+        const thirdPartyDomains = new Set<string>()
+        let thirdPartyScriptCount = 0
+        for (const s of scripts) {
+          if (!s.src) continue
+          try {
+            const u = new URL(s.src, location.href)
+            if (u.hostname && u.hostname !== host) {
+              thirdPartyScriptCount += 1
+              thirdPartyDomains.add(u.hostname)
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        // inline handler attrs: onclick, onload 등
+        const handlerAttrs = [
+          'onclick','ondblclick','onmousedown','onmouseup','onmousemove','onmouseover','onmouseout',
+          'onmouseenter','onmouseleave','onkeydown','onkeyup','onkeypress','oninput','onchange','onsubmit',
+          'onfocus','onblur','onload','onerror'
+        ]
+        let inlineEventHandlerAttrCount = 0
+        try {
+          const all = Array.from(document.querySelectorAll('*')) as Element[]
+          for (const el of all) {
+            for (const a of handlerAttrs) {
+              if (el.hasAttribute(a)) inlineEventHandlerAttrCount++
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        return {
+          thirdPartyScriptDomains: Array.from(thirdPartyDomains).sort(),
+          thirdPartyScriptCount,
+          inlineScriptCount,
+          inlineEventHandlerAttrCount,
+        }
+      })
+      securitySignals.clientScripts = clientScripts
+    } catch {
+      /* ignore */
+    }
+
     await browser.close()
     browser = null
 
@@ -369,6 +523,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
       pageText: pageText || undefined,
       pageStats,
       responseMeta,
+      securitySignals: Object.keys(securitySignals || {}).length ? securitySignals : undefined,
+      mobileSignals,
     }
   } catch (error) {
     // 정리 작업
