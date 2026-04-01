@@ -46,6 +46,15 @@ function Verdict({ w }: { w: CompareWinner }) {
   return <span className={styles.cellWin}>B</span>
 }
 
+function compareHigherBetter(a: number | null, b: number | null): CompareWinner {
+  if (a == null && b == null) return 'tie'
+  if (a == null) return 'b'
+  if (b == null) return 'a'
+  if (a > b) return 'a'
+  if (b > a) return 'b'
+  return 'tie'
+}
+
 type CompareViewProps = {
   /** `/compare?preview=1`에서 목업 세션을 바로 렌더링 */
   initialPreview?: boolean
@@ -146,6 +155,14 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
   const winTotal = compareMetricWinner(metricsA, metricsB, 'totalIssues')
   const winHigh = compareMetricWinner(metricsA, metricsB, 'highPriority')
   const winAiseo = compareAiseoWinner(metricsA, metricsB)
+  const winQuality = compareHigherBetter(
+    qualityScore100(reportA),
+    qualityScore100(reportB)
+  )
+  const winSecurityScore = compareHigherBetter(
+    securityScore100(reportA),
+    securityScore100(reportB)
+  )
 
   const previewWinner: CompareWinner =
     winTotal !== 'tie' ? winTotal : winHigh !== 'tie' ? winHigh : winAiseo !== 'tie' ? winAiseo : 'tie'
@@ -185,6 +202,23 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     return out
   }
 
+  function qualityScore100(report: ReportData): number | null {
+    const qa = report.qualityAudit
+    const s = qa?.semanticScore
+    const e = qa?.efficiencyScore
+    const ss = typeof s === 'number' && Number.isFinite(s) ? s : null
+    const ee = typeof e === 'number' && Number.isFinite(e) ? e : null
+    if (ss == null && ee == null) return null
+    if (ss != null && ee != null) return Math.round((ss + ee) / 2)
+    return ss ?? ee
+  }
+
+  function securityScore100(report: ReportData): number | null {
+    const raw = report.securityAudit?.score100
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+    return Math.round(raw)
+  }
+
   const buildNaturalReasons = (w: CompareWinner): string[] => {
     if (w === 'tie') {
       return [
@@ -201,7 +235,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     const reasons: string[] = []
 
     // 1) 카테고리 강점(이슈가 더 적은 쪽)을 최대 2개까지 선택
-    const catCandidates = (['SEO', '접근성', '성능', '모범사례', 'AEO/GEO', 'UX/UI'] as const)
+    const catCandidates = (['SEO', '접근성', '성능', '모범사례', 'Security', 'AEO/GEO', 'UX/UI'] as const)
       .map((cat) => {
         const cw = compareCategoryWinner(metricsA, metricsB, cat)
         if (cw !== w) return null
@@ -255,9 +289,37 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         reasons.push(
           `${winName}는 모범사례(보안 헤더·정책·기본 구성) 측면의 권고가 상대적으로 적어, 운영 품질이 더 균형 잡혀 있습니다.`
         )
+      } else if (cat === 'Security') {
+        reasons.push(
+          `${winName}는 Security(보안 헤더/정책/클라이언트 신호) 관점의 개선 권고가 상대적으로 적어, 기본 보안 위생 상태가 더 안정적입니다.`
+        )
       } else if (cat === 'UX/UI') {
         reasons.push(
           `${winName}는 UX/UI 측면에서 CTA·폼·가독성 같은 상호작용 요소의 개선 권고가 상대적으로 적어, 전환 흐름이 더 매끄럽게 설계되어 있습니다.`
+        )
+      }
+    }
+
+    // 1.5) 업데이트된 점검(품질/보안 점수)이 있으면 “판단 근거”로 추가
+    const qWin = qualityScore100(winReport)
+    const qLose = qualityScore100(loseReport)
+    if (qWin != null && qLose != null && qWin !== qLose) {
+      const better = qWin > qLose ? winName : loseName
+      const delta = Math.abs(qWin - qLose)
+      if (better === winName && delta >= 5) {
+        reasons.push(
+          `${winName}는 마크업/리소스 품질 점검(구조·효율) 신호가 더 좋게 나타나, 구조적 완성도/리소스 관리 측면에서 비교적 유리합니다.`
+        )
+      }
+    }
+    const sWin = securityScore100(winReport)
+    const sLose = securityScore100(loseReport)
+    if (sWin != null && sLose != null && sWin !== sLose) {
+      const better = sWin > sLose ? winName : loseName
+      const delta = Math.abs(sWin - sLose)
+      if (better === winName && delta >= 5) {
+        reasons.push(
+          `${winName}는 보안 상세 점검(Security) 점수가 상대적으로 더 높아, 헤더/정책/스크립트 구성 측면의 리스크 신호가 더 적습니다.`
         )
       }
     }
@@ -295,7 +357,14 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     return `${styles.summaryCard} ${styles.summaryCardTie}`
   }
 
-  const categories = [...CATEGORY_ORDER, '기타'] as const
+  const categoriesAll = [...CATEGORY_ORDER, '기타'] as const
+  /**
+   * 로컬호스트가 포함되면 전역 템플릿/배포 환경 설정(SEO·AEO/GEO·Security·모범사례) 성격의 판단이 왜곡될 수 있어
+   * By category 표에서는 해당 행을 숨긴다.
+   */
+  const categories = (localhostMode
+    ? (['접근성', 'UX/UI', '성능', '기타'] as const)
+    : categoriesAll) as readonly string[]
 
   return (
     <>
@@ -307,9 +376,9 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         <div className={styles.badge}>● Site Improve AI</div>
         <h1 className={styles.title}>Comparative Analysis</h1>
         <p className={styles.subtitle}>
-          두 URL에 대해 동일한 파이프라인으로 분석한 뒤, 이슈 밀도·우선순위·항목별 지표를 나란히 봅니다. 숫자가
+          두 URL에 대해 동일한 파이프라인으로 분석한 뒤, 이슈 밀도·우선순위·항목별 지표를 나란히 봅니다.
           <br />
-          작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). AEO/GEO 점수는 높을수록 유리합니다.
+          숫자가 작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). AEO/GEO 점수는 높을수록 유리합니다.
           {localhostMode ? (
             <>
               <br />
@@ -473,6 +542,46 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
               </tr>
             </thead>
             <tbody>
+              {!localhostMode ? (
+                <>
+                  <tr
+                    className={
+                      previewWinner !== 'tie' && winQuality === previewWinner
+                        ? styles.byCategoryRowOverallWin
+                        : undefined
+                    }
+                  >
+                    <td>마크업/리소스(품질 점검)</td>
+                    <td className={winQuality === 'a' ? styles.cellWin : styles.cellMuted}>
+                      {qualityScore100(reportA) != null ? `${qualityScore100(reportA)}` : '—'} / —
+                    </td>
+                    <td className={winQuality === 'b' ? styles.cellWin : styles.cellMuted}>
+                      {qualityScore100(reportB) != null ? `${qualityScore100(reportB)}` : '—'} / —
+                    </td>
+                    <td className={styles.verdictCol}>
+                      <Verdict w={winQuality} />
+                    </td>
+                  </tr>
+                  <tr
+                    className={
+                      previewWinner !== 'tie' && winSecurityScore === previewWinner
+                        ? styles.byCategoryRowOverallWin
+                        : undefined
+                    }
+                  >
+                    <td>Security(점수)</td>
+                    <td className={winSecurityScore === 'a' ? styles.cellWin : styles.cellMuted}>
+                      {securityScore100(reportA) != null ? `${securityScore100(reportA)}` : '—'} / —
+                    </td>
+                    <td className={winSecurityScore === 'b' ? styles.cellWin : styles.cellMuted}>
+                      {securityScore100(reportB) != null ? `${securityScore100(reportB)}` : '—'} / —
+                    </td>
+                    <td className={styles.verdictCol}>
+                      <Verdict w={winSecurityScore} />
+                    </td>
+                  </tr>
+                </>
+              ) : null}
               {categories.map((cat) => {
                 const w = compareCategoryWinner(metricsA, metricsB, cat)
                 const ca = metricsA.byCategory[cat] ?? { count: 0, highCount: 0 }
