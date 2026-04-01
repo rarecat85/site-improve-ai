@@ -178,6 +178,14 @@ function scriptCluster100(lhr: any, perfCat: number | null): number {
   return perfCat ?? 70
 }
 
+/** AEO/GEO는 분포가 낮아 등급 판정을 완화(동일 표를 쓰되 점수를 보정) */
+function aiseoGradeScore100(raw: number): number {
+  const s = Math.max(0, Math.min(100, Math.round(raw)))
+  // 대부분의 사이트가 과도하게 F로 떨어지는 것을 방지하기 위한 완화 스케일링.
+  // 예: 40→52, 50→65, 60→78, 70→91 (상한 100)
+  return Math.max(0, Math.min(100, Math.round(s * 1.3)))
+}
+
 /**
  * 대시보드 카드 10종 + 전체 점수
  */
@@ -208,6 +216,7 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
     typeof input.aiseo?.overallScore === 'number' && !Number.isNaN(input.aiseo.overallScore)
       ? Math.max(0, Math.min(100, Math.round(input.aiseo.overallScore)))
       : null
+  const aiseoGradeScore = aiseoScore != null ? aiseoGradeScore100(aiseoScore) : null
 
   const overallScores: number[] = []
   const pushOverall = (score: number | null | undefined) => {
@@ -264,11 +273,12 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
       grade:
         input.aiseo?.grade && String(input.aiseo.grade).trim()
           ? String(input.aiseo.grade).trim()
-          : aiseoScore != null
-            ? scoreToGradeAndStatus(aiseoScore).grade
+          : aiseoGradeScore != null
+            ? scoreToGradeAndStatus(aiseoGradeScore).grade
             : '—',
-      status: aiseoScore != null ? scoreToGradeAndStatus(aiseoScore).status : '데이터 없음',
-      score100: aiseoScore ?? undefined,
+      status: aiseoGradeScore != null ? scoreToGradeAndStatus(aiseoGradeScore).status : '데이터 없음',
+      // 등급 산정에 사용한 보정 점수(0~100)
+      score100: aiseoGradeScore ?? undefined,
     },
   ]
 
