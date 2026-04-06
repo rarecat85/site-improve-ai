@@ -5,6 +5,7 @@ import { runAxe } from '@/lib/utils/axe-runner'
 import { MIN_VIABLE_HTML_LENGTH, MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { existsSync } from 'node:fs'
+import path from 'node:path'
 import type { PageStatsSummary, ResponseMetaSummary } from '@/lib/utils/grade-calculator'
 import { extractResponseMeta } from '@/lib/utils/grade-calculator'
 import { collectPageStats, scrollPageForLazyContent } from '@/lib/utils/page-stats'
@@ -84,6 +85,18 @@ function resolveChromeExecutablePath(): string | undefined {
     ]
     for (const p of candidates) {
       if (p && existsSync(p)) return p
+    }
+  }
+
+  // Windows: 일반 설치 위치(실제 경로는 PC마다 다를 수 있음)
+  if (process.platform === 'win32') {
+    const roots: string[] = []
+    if (process.env.ProgramFiles) roots.push(process.env.ProgramFiles)
+    if (process.env['ProgramFiles(x86)']) roots.push(process.env['ProgramFiles(x86)'])
+    if (process.env.LOCALAPPDATA) roots.push(process.env.LOCALAPPDATA)
+    for (const root of roots) {
+      const chrome = path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')
+      if (existsSync(chrome)) return chrome
     }
   }
 
@@ -180,7 +193,10 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
         'Puppeteer가 실행할 Chrome/Chromium을 찾지 못했습니다.',
         '해결 방법:',
         '- (권장) `npx puppeteer browsers install chrome` 실행',
-        '- 또는 시스템 Chrome 경로를 환경변수로 지정: PUPPETEER_EXECUTABLE_PATH=/Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome',
+        '- 또는 시스템 Chrome 경로를 환경변수로 지정 (`PUPPETEER_EXECUTABLE_PATH` 또는 `CHROME_EXECUTABLE_PATH`). Next 서버(API)가 읽도록 터미널에 설정하거나 `.env.local`에 넣을 수 있습니다.',
+        '  · macOS 예: PUPPETEER_EXECUTABLE_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+        '  · Windows 예: PUPPETEER_EXECUTABLE_PATH=C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        '  (실제 설치 위치는 PC마다 다를 수 있습니다.)',
       ].join('\n')
       const message = launchError instanceof Error ? launchError.message : String(launchError)
       throw new Error(`${hint}\n\n원본 에러: ${message}`)

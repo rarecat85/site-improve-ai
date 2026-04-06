@@ -372,18 +372,11 @@ export default function Home() {
     await runAnalysis(trimmedUrl)
   }
 
-  const comparisonLoadingHint =
-    mode === 'comparison' && loading && !loadingSubtextOverride
-      ? progress < 50
-        ? '첫 번째 URL 분석 중… (전체의 약 절반)'
-        : '두 번째 URL 분석 중…'
-      : null
-
   if (loading) {
     return (
       <AnalysisLoadingView
         progress={progress}
-        subtext={loadingSubtextOverride ?? comparisonLoadingHint ?? getLoadingMessage(messageTick)}
+        subtext={loadingSubtextOverride ?? getLoadingMessage(messageTick)}
       />
     )
   }

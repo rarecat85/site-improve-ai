@@ -40,10 +40,12 @@ function winnerLabel(w: CompareWinner, aLabel: string, bLabel: string): string {
   return `${bLabel} 우세`
 }
 
-function Verdict({ w }: { w: CompareWinner }) {
+/** `emphasize`: 전반 우세(previewWinner)와 같은 쪽이 이겼을 때만 판정을 포인트 색으로 표시 */
+function Verdict({ w, emphasize }: { w: CompareWinner; emphasize: boolean }) {
   if (w === 'tie') return <span className={styles.cellMuted}>동률</span>
-  if (w === 'a') return <span className={styles.cellWin}>A</span>
-  return <span className={styles.cellWin}>B</span>
+  const cls = emphasize ? styles.cellWin : styles.cellMuted
+  if (w === 'a') return <span className={cls}>A</span>
+  return <span className={cls}>B</span>
 }
 
 function compareHigherBetter(a: number | null, b: number | null): CompareWinner {
@@ -362,10 +364,14 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     return buildNaturalReasons(w)
   }
 
-  const cardClass = (w: CompareWinner) => {
-    if (w === 'a' || w === 'b') return `${styles.summaryCard} ${styles.summaryCardWinA}`
-    return `${styles.summaryCard} ${styles.summaryCardTie}`
-  }
+  /** 전반 우세(previewWinner)와 해당 지표 승자가 같을 때만 카드 테두리 강조 */
+  const summaryMetricCardClass = (metricWinner: CompareWinner) =>
+    previewWinner !== 'tie' && metricWinner !== 'tie' && metricWinner === previewWinner
+      ? `${styles.summaryCard} ${styles.summaryCardBorderAccent}`
+      : styles.summaryCard
+
+  const verdictEmphasize = (w: CompareWinner) =>
+    previewWinner !== 'tie' && w !== 'tie' && w === previewWinner
 
   const categoriesAll = [...CATEGORY_ORDER, '기타'] as const
   /**
@@ -488,7 +494,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
 
         <h2 className={styles.sectionLabel}>Summary</h2>
         <div className={styles.summaryGrid}>
-          <div className={cardClass(winTotal)}>
+          <div className={summaryMetricCardClass(winTotal)}>
             <h3 className={styles.summaryTitle}>전체 이슈 수</h3>
             <div className={styles.summaryValues}>
               <div className={styles.summarySide}>
@@ -502,7 +508,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
             </div>
             <div className={styles.summaryVerdict}>{winnerLabel(winTotal, 'A', 'B')}</div>
           </div>
-          <div className={cardClass(winHigh)}>
+          <div className={summaryMetricCardClass(winHigh)}>
             <h3 className={styles.summaryTitle}>높은 우선 이슈</h3>
             <div className={styles.summaryValues}>
               <div className={styles.summarySide}>
@@ -516,7 +522,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
             </div>
             <div className={styles.summaryVerdict}>{winnerLabel(winHigh, 'A', 'B')}</div>
           </div>
-          <div className={cardClass(winAiseo)}>
+          <div className={summaryMetricCardClass(winAiseo)}>
             <h3 className={styles.summaryTitle}>AEO/GEO 점수</h3>
             <div className={styles.summaryValues}>
               <div className={styles.summarySide}>
@@ -553,13 +559,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
             </thead>
             <tbody>
               {/* 로컬호스트 비교에서는 Security만 제외하고, 품질 점검은 포함 */}
-              <tr
-                className={
-                  previewWinner !== 'tie' && winQuality === previewWinner
-                    ? styles.byCategoryRowOverallWin
-                    : undefined
-                }
-              >
+              <tr>
                 <td>마크업/리소스(품질 점검)</td>
                 <td className={winQuality === 'a' ? styles.cellWin : styles.cellMuted}>
                   {qualityScore100(reportA) != null ? `${qualityScore100(reportA)}` : '—'} / —
@@ -568,18 +568,12 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                   {qualityScore100(reportB) != null ? `${qualityScore100(reportB)}` : '—'} / —
                 </td>
                 <td className={styles.verdictCol}>
-                  <Verdict w={winQuality} />
+                  <Verdict w={winQuality} emphasize={verdictEmphasize(winQuality)} />
                 </td>
               </tr>
               {!localhostMode ? (
                 <>
-                  <tr
-                    className={
-                      previewWinner !== 'tie' && winSecurityScore === previewWinner
-                        ? styles.byCategoryRowOverallWin
-                        : undefined
-                    }
-                  >
+                  <tr>
                     <td>Security(점수)</td>
                     <td className={winSecurityScore === 'a' ? styles.cellWin : styles.cellMuted}>
                       {securityScore100(reportA) != null ? `${securityScore100(reportA)}` : '—'} / —
@@ -588,7 +582,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                       {securityScore100(reportB) != null ? `${securityScore100(reportB)}` : '—'} / —
                     </td>
                     <td className={styles.verdictCol}>
-                      <Verdict w={winSecurityScore} />
+                      <Verdict w={winSecurityScore} emphasize={verdictEmphasize(winSecurityScore)} />
                     </td>
                   </tr>
                 </>
@@ -597,12 +591,8 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                 const w = compareCategoryWinner(metricsA, metricsB, cat)
                 const ca = metricsA.byCategory[cat] ?? { count: 0, highCount: 0 }
                 const cb = metricsB.byCategory[cat] ?? { count: 0, highCount: 0 }
-                const highlightOverallWinnerRow = previewWinner !== 'tie' && w === previewWinner
                 return (
-                  <tr
-                    key={cat}
-                    className={highlightOverallWinnerRow ? styles.byCategoryRowOverallWin : undefined}
-                  >
+                  <tr key={cat}>
                     <td>{cat}</td>
                     <td className={w === 'a' ? styles.cellWin : styles.cellMuted}>
                       {ca.count} / {ca.highCount}
@@ -611,7 +601,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                       {cb.count} / {cb.highCount}
                     </td>
                     <td className={styles.verdictCol}>
-                      <Verdict w={w} />
+                      <Verdict w={w} emphasize={verdictEmphasize(w)} />
                     </td>
                   </tr>
                 )

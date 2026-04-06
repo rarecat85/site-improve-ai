@@ -238,16 +238,8 @@
   background: var(--app-surface-raised);
 }
 
-.summaryCardWinA {
+.summaryCardBorderAccent {
   border-color: var(--app-point);
-}
-
-.summaryCardWinB {
-  border-color: var(--app-point);
-}
-
-.summaryCardTie {
-  border-color: var(--app-border-mid);
 }
 
 .summaryTitle {
@@ -325,27 +317,6 @@
 
 .table tr:last-child td {
   border-bottom: none;
-}
-
-.byCategoryRowOverallWin td {
-  background: color-mix(in oklab, var(--app-point) 8%, transparent);
-  box-shadow:
-    inset 0 1px 0 var(--app-point),
-    inset 0 -1px 0 var(--app-point);
-}
-
-.byCategoryRowOverallWin td:first-child {
-  box-shadow:
-    inset 1px 0 0 var(--app-point),
-    inset 0 1px 0 var(--app-point),
-    inset 0 -1px 0 var(--app-point);
-}
-
-.byCategoryRowOverallWin td:last-child {
-  box-shadow:
-    inset -1px 0 0 var(--app-point),
-    inset 0 1px 0 var(--app-point),
-    inset 0 -1px 0 var(--app-point);
 }
 
 .cellWin {
