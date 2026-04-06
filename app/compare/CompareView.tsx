@@ -1,13 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AnalysisLoadingView } from '@/app/components/analysis/AnalysisLoadingView'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
+import { AppModal } from '@/app/components/ui/AppModal'
 import {
+  COMPARE_OPEN_META_SESSION_KEY,
+  COMPARE_RESTORE_DOM_EVENT,
   COMPARE_SESSION_STORAGE_KEY,
   parseCompareSession,
+  readCompareOpenMeta,
+  type CompareOpenMeta,
   type CompareSessionV1,
 } from '@/lib/constants/compare-session'
 import { REPORT_OPEN_META_SESSION_KEY } from '@/lib/constants/report-session'
@@ -22,7 +27,8 @@ import {
   computeCompareSideMetrics,
   type CompareWinner,
 } from '@/lib/utils/compare-report-metrics'
-import { saveCompareSessionToIdb } from '@/lib/storage/site-improve-report-idb'
+import { deleteCompareSnapshotById, saveCompareSessionToIdb } from '@/lib/storage/site-improve-report-idb'
+import { useChromeNavVisibility } from '@/app/components/shell/chrome-nav-visibility'
 import styles from './compare.module.css'
 
 function isLocalhostUrl(raw: string): boolean {
@@ -64,16 +70,38 @@ type CompareViewProps = {
 
 export default function CompareView({ initialPreview = false }: CompareViewProps) {
   const router = useRouter()
+  const { setHideHamburger } = useChromeNavVisibility()
   const [session, setSession] = useState<CompareSessionV1 | null | undefined>(() =>
     initialPreview ? MOCK_COMPARE_PREVIEW_SESSION : undefined
   )
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [messageTick, setMessageTick] = useState(0)
+  const [compareOpenMeta, setCompareOpenMeta] = useState<CompareOpenMeta>({ source: 'session' })
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'error'>('idle')
+  const [infoModalMessage, setInfoModalMessage] = useState<string | null>(null)
+
+  const reloadCompareFromStorage = useCallback(() => {
+    if (initialPreview) return
+    setSession(parseCompareSession(sessionStorage.getItem(COMPARE_SESSION_STORAGE_KEY)))
+    setCompareOpenMeta(readCompareOpenMeta())
+  }, [initialPreview])
+
+  useLayoutEffect(() => {
+    reloadCompareFromStorage()
+  }, [reloadCompareFromStorage])
 
   useEffect(() => {
     if (initialPreview) return
-    setSession(parseCompareSession(sessionStorage.getItem(COMPARE_SESSION_STORAGE_KEY)))
-  }, [initialPreview])
+    const onRestore = () => reloadCompareFromStorage()
+    window.addEventListener(COMPARE_RESTORE_DOM_EVENT, onRestore)
+    return () => window.removeEventListener(COMPARE_RESTORE_DOM_EVENT, onRestore)
+  }, [initialPreview, reloadCompareFromStorage])
+
+  /** 홈에서 로딩 중 이동 시 hideHamburger가 true로 남는 경우 등 — 비교 화면에서는 항상 햄버거/사이드 네비 표시 */
+  useEffect(() => {
+    setHideHamburger(false)
+  }, [setHideHamburger])
 
   useEffect(() => {
     if (session !== undefined) {
@@ -151,6 +179,36 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     } catch {
       setSaveStatus('error')
       window.setTimeout(() => setSaveStatus('idle'), 3000)
+    }
+  }
+
+  const requestDeleteConfirm = () => {
+    if (initialPreview) return
+    if (compareOpenMeta.source !== 'restore' || !compareOpenMeta.snapshotId) {
+      setInfoModalMessage('삭제할 저장 항목 정보를 찾을 수 없습니다. 메뉴에서 다시 열어 주세요.')
+      return
+    }
+    setDeleteConfirmOpen(true)
+  }
+
+  const performDeleteStored = async () => {
+    const id = compareOpenMeta.snapshotId
+    if (!id) return
+    setDeleteConfirmOpen(false)
+    setDeleteStatus('deleting')
+    try {
+      await deleteCompareSnapshotById(id)
+      try {
+        sessionStorage.removeItem(COMPARE_SESSION_STORAGE_KEY)
+        sessionStorage.removeItem(COMPARE_OPEN_META_SESSION_KEY)
+      } catch {
+        /* ignore */
+      }
+      router.push('/')
+    } catch (e) {
+      console.error('Delete compare snapshot failed:', e)
+      setDeleteStatus('error')
+      window.setTimeout(() => setDeleteStatus('idle'), 3200)
     }
   }
 
@@ -611,27 +669,87 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         </div>
 
         <div className={styles.footerActions}>
-          <button
-            type="button"
-            className={`${styles.btn} ${styles.btnPrimary}`}
-            onClick={() => void saveCompare()}
-            disabled={saveStatus === 'saving'}
-            aria-busy={saveStatus === 'saving'}
-          >
-            {saveStatus === 'saving'
-              ? '저장 중…'
-              : saveStatus === 'saved'
-                ? '저장됨'
-                : saveStatus === 'error'
-                  ? '저장 실패'
-                  : '비교 저장'}
-          </button>
+          {!initialPreview &&
+            (compareOpenMeta.source === 'restore' && compareOpenMeta.snapshotId ? (
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnDanger}`}
+                onClick={() => requestDeleteConfirm()}
+                disabled={deleteStatus === 'deleting'}
+                aria-busy={deleteStatus === 'deleting'}
+                aria-label="저장된 비교 데이터 삭제"
+              >
+                {deleteStatus === 'deleting'
+                  ? '삭제 중…'
+                  : deleteStatus === 'error'
+                    ? '삭제 실패 — 다시 시도'
+                    : '데이터 삭제'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnPrimary}`}
+                onClick={() => void saveCompare()}
+                disabled={saveStatus === 'saving'}
+                aria-busy={saveStatus === 'saving'}
+              >
+                {saveStatus === 'saving'
+                  ? '저장 중…'
+                  : saveStatus === 'saved'
+                    ? '저장됨'
+                    : saveStatus === 'error'
+                      ? '저장 실패'
+                      : '비교 저장'}
+              </button>
+            ))}
           <Link href="/" className={`${styles.btn} ${styles.btnOutline}`}>
             첫 화면으로
           </Link>
         </div>
+        {!initialPreview ? (
+          <p className={styles.footerHint}>
+            {compareOpenMeta.source === 'restore' && compareOpenMeta.snapshotId
+              ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
+              : '비교 저장은 이 브라우저의 IndexedDB에 보관됩니다. 메뉴의 저장된 비교에서 항목별로 열거나 삭제할 수 있습니다.'}
+          </p>
+        ) : null}
       </div>
     </div>
+
+    <AppModal
+      open={deleteConfirmOpen}
+      title="저장 항목 삭제"
+      onClose={() => setDeleteConfirmOpen(false)}
+      description={
+        <p>
+          선택한 저장 비교 항목만 삭제됩니다. 삭제 후에는 복구할 수 없으며, 현재 화면의 세션 데이터도 함께
+          지워집니다.
+        </p>
+      }
+      actions={[
+        { label: '취소', variant: 'ghost', onClick: () => setDeleteConfirmOpen(false) },
+        {
+          label: '삭제',
+          variant: 'danger',
+          onClick: () => void performDeleteStored(),
+          disabled: deleteStatus === 'deleting',
+        },
+      ]}
+    />
+    <AppModal
+      open={infoModalMessage !== null}
+      title="안내"
+      onClose={() => setInfoModalMessage(null)}
+      description={infoModalMessage ? <p>{infoModalMessage}</p> : null}
+      actions={[
+        {
+          label: '확인',
+          variant: 'primary',
+          autoFocus: true,
+          onClick: () => setInfoModalMessage(null),
+        },
+      ]}
+    />
     </>
   )
 }

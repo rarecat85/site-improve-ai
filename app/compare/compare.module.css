@@ -380,6 +380,32 @@
   color: var(--app-point);
 }
 
+.btnDanger {
+  color: var(--app-alert);
+  background: transparent;
+  border-color: var(--app-alert);
+}
+
+.btnDanger:hover:not(:disabled) {
+  background: var(--app-alert);
+  color: #ffffff;
+  border-color: var(--app-alert);
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.footerHint {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--app-text-muted);
+  width: 100%;
+  margin: 0.75rem 0 0;
+  text-align: right;
+}
+
 .hint {
   font-size: 0.75rem;
   line-height: 1.55;

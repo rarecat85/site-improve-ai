@@ -180,7 +180,7 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     const executablePath = resolveChromeExecutablePath()
     try {
       browser = await puppeteer.launch({
-        headless: true,
+        headless: 'new',
         executablePath,
         args: [
           '--no-sandbox',

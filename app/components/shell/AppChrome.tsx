@@ -19,6 +19,8 @@ import {
   type StoredReportPayload,
 } from '@/lib/storage/site-improve-report-idb'
 import {
+  COMPARE_OPEN_META_SESSION_KEY,
+  COMPARE_RESTORE_DOM_EVENT,
   COMPARE_SESSION_STORAGE_KEY,
   parseCompareSession,
   type CompareSessionV1,
@@ -271,9 +273,16 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
       }
       try {
         sessionStorage.setItem(COMPARE_SESSION_STORAGE_KEY, JSON.stringify(parsed))
+        sessionStorage.setItem(
+          COMPARE_OPEN_META_SESSION_KEY,
+          JSON.stringify({ source: 'restore', snapshotId: id })
+        )
       } catch {
         setCompareRestoreError('비교 결과를 세션에 기록할 수 없습니다.')
         return
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(COMPARE_RESTORE_DOM_EVENT))
       }
       closeNav()
       router.push('/compare')

@@ -14,6 +14,7 @@ import {
 import { AppModal } from '@/app/components/ui/AppModal'
 import uiModalStyles from '@/app/components/ui/app-modal.module.css'
 import {
+  COMPARE_OPEN_META_SESSION_KEY,
   COMPARE_SESSION_STORAGE_KEY,
   type CompareSessionV1,
 } from '@/lib/constants/compare-session'
@@ -87,6 +88,7 @@ export default function Home() {
 
   useEffect(() => {
     setHideHamburger(loading || analysisError != null)
+    return () => setHideHamburger(false)
   }, [loading, analysisError, setHideHamburger])
 
   useEffect(() => {
@@ -265,6 +267,7 @@ export default function Home() {
       }
       try {
         sessionStorage.setItem(COMPARE_SESSION_STORAGE_KEY, JSON.stringify(session))
+        sessionStorage.removeItem(COMPARE_OPEN_META_SESSION_KEY)
       } catch {
         setAnalysisError({
           message:
