@@ -9,7 +9,7 @@
 ```
 [클라이언트] URL + priorities
     → POST /api/analyze
-        → analyzeWebsite (Puppeteer, Lighthouse, axe, Cheerio …)
+        → analyzeWebsite (Puppeteer, Lighthouse, axe, Cheerio … — Lighthouse·동일 탭 뷰포트/UA/스로틀 프리셋은 [`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) 참고)
         → fetchCruxSummary (선택, Chrome UX Report API)
         → runAiseoAudit (aiseo-audit · AEO/GEO)
         → generateReport (다중 LLM + computeDashboardGrades, URL 정책 포함)

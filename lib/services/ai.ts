@@ -21,6 +21,7 @@ import type {
 } from '@/lib/utils/page-architecture'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
+import { LLM_CONFIG } from '@/lib/config/llm'
 
 /**
  * LLM 역할 분담 (리포트 카테고리 + 보조 분석)
@@ -55,13 +56,13 @@ async function callGemini(prompt: string): Promise<string> {
     throw new Error('GEMINI_API_KEY가 설정되지 않았습니다.')
   }
 
-  // Gemini 모델 사용
-  // 사용 가능한 최신 모델:
-  // - gemini-2.5-flash: 빠르고 할당량 충분 (RPM 5, TPM 250K) - 추천
-  // - gemini-3-flash: 최신 버전, 빠름 (RPM 5, TPM 250K)
-  // - gemini-3.1-flash-lite: 더 많은 할당량 (RPM 15, TPM 250K)
-  // - gemini-2.5-pro: 더 강력하지만 할당량 제한 없음
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({
+    model: LLM_CONFIG.geminiModel,
+    generationConfig: {
+      temperature: LLM_CONFIG.temperature,
+      maxOutputTokens: 4096,
+    },
+  })
   
   try {
     const result = await model.generateContent(prompt)
@@ -95,8 +96,9 @@ async function callClaude(prompt: string): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: LLM_CONFIG.anthropicModel,
       max_tokens: 4096,
+      temperature: LLM_CONFIG.temperature,
       messages: [{ role: 'user', content: prompt }],
     }),
   })
@@ -122,8 +124,10 @@ async function callOpenAI(prompt: string): Promise<string> {
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
+      model: LLM_CONFIG.openaiModel,
       max_tokens: 4096,
+      temperature: LLM_CONFIG.temperature,
+      ...(LLM_CONFIG.openaiSeed != null ? { seed: LLM_CONFIG.openaiSeed } : {}),
       messages: [{ role: 'user', content: prompt }],
     }),
   })

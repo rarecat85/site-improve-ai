@@ -9,6 +9,7 @@ import path from 'node:path'
 import type { PageStatsSummary, ResponseMetaSummary } from '@/lib/utils/grade-calculator'
 import { extractResponseMeta } from '@/lib/utils/grade-calculator'
 import { collectPageStats, scrollPageForLazyContent } from '@/lib/utils/page-stats'
+import { getAnalysisFormFactor } from '@/lib/constants/measurement'
 
 export type { AnalysisResults } from '@/lib/types/analysis-results'
 
@@ -204,11 +205,42 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
 
     const page = await browser.newPage()
 
+    const lhConstants = await import('lighthouse/core/config/constants.js')
+    const formFactor = getAnalysisFormFactor()
+
+    try {
+      const screen =
+        formFactor === 'mobile'
+          ? lhConstants.screenEmulationMetrics.mobile
+          : lhConstants.screenEmulationMetrics.desktop
+      const ua =
+        formFactor === 'mobile' ? lhConstants.userAgents.mobile : lhConstants.userAgents.desktop
+      await page.setViewport({
+        width: screen.width,
+        height: screen.height,
+        deviceScaleFactor: screen.deviceScaleFactor,
+        isMobile: screen.mobile,
+      })
+      await page.setUserAgent(ua)
+    } catch (emuErr) {
+      console.warn('[analyzer] Viewport/UA emulation fallback (using browser defaults):', emuErr)
+    }
+
     // Lighthouse 실행 (Puppeteer 브라우저 재사용)
     console.log('Running Lighthouse with Puppeteer browser...')
     try {
       const lighthouseModule = await import('lighthouse')
       const lighthouse = lighthouseModule.default || lighthouseModule
+      const throttling =
+        formFactor === 'mobile'
+          ? lhConstants.throttling.mobileSlow4G
+          : lhConstants.throttling.desktopDense4G
+      const screenEmulation =
+        formFactor === 'mobile'
+          ? lhConstants.screenEmulationMetrics.mobile
+          : lhConstants.screenEmulationMetrics.desktop
+      const emulatedUserAgent =
+        formFactor === 'mobile' ? lhConstants.userAgents.mobile : lhConstants.userAgents.desktop
 
       const wsEndpoint: string | undefined =
         typeof browser?.wsEndpoint === 'function' ? browser.wsEndpoint() : undefined
@@ -221,7 +253,12 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
         logLevel: 'silent' as const,
         output: 'json' as const,
         onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo', 'pwa'],
-        port: debugPort, // Puppeteer가 할당한 디버깅 포트
+        port: debugPort,
+        formFactor,
+        throttlingMethod: 'simulate' as const,
+        throttling,
+        screenEmulation,
+        emulatedUserAgent,
       }
 
       lighthouseResult = await Promise.race([
