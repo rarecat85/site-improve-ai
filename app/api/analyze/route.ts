@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { MIN_VIABLE_HTML_LENGTH } from '@/lib/constants/analysis-pipeline'
+import { getMissingAiEnvKeys } from '@/lib/config/ai-keys'
 import { userFacingAnalysisError } from '@/lib/utils/analysis-error-message'
 
 // Next.js API Route 타임아웃 설정 (최대 5분)
@@ -74,23 +75,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 항목별 전담용 API 키 확인
-    if (!process.env.GEMINI_API_KEY) {
-      console.error('GEMINI_API_KEY is not set')
+    const missingKeys = getMissingAiEnvKeys()
+    if (missingKeys.length) {
+      const hint =
+        process.env.NODE_ENV === 'development'
+          ? ' 로컬에서는 /setup 페이지에서 입력할 수 있습니다.'
+          : ' .env 또는 호스팅 환경 변수에 키를 설정해 주세요.'
       return NextResponse.json(
-        { error: 'GEMINI_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
-        { status: 500 }
-      )
-    }
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: 'ANTHROPIC_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
-        { status: 500 }
-      )
-    }
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: 'OPENAI_API_KEY가 설정되지 않았습니다. .env.local 파일을 확인해주세요.' },
+        {
+          error: `필수 API 키가 없습니다: ${missingKeys.join(', ')}.${hint}`,
+        },
         { status: 500 }
       )
     }
