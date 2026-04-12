@@ -4,6 +4,21 @@ import { MOCK_REPORT_PREVIEW, PREVIEW_REQUIREMENT_TEXT } from '@/lib/mocks/repor
 
 const MOCK_REPORT_PREVIEW_B: ReportData = {
   ...MOCK_REPORT_PREVIEW,
+  dashboard: {
+    overallScore100: 71,
+    cards: [
+      { id: 'overall', label: 'OVERALL GRADE', grade: 'B', status: '양호', score100: 71 },
+      { id: 'seo', label: 'SEO 최적화', grade: 'B', status: '양호', score100: 74 },
+      { id: 'performance', label: '성능/로딩', grade: 'C', status: '개선 권장', score100: 68 },
+      { id: 'accessibility', label: '접근성', grade: 'B', status: '양호', score100: 84 },
+      { id: 'security', label: '보안', grade: 'B', status: '양호', score100: 76 },
+      { id: 'quality', label: '마크업/리소스', grade: 'B', status: '양호', score100: 72 },
+      { id: 'mobile', label: '모바일 대응', grade: 'B', status: '양호', score100: 75 },
+      { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 권장', score100: 58 },
+      { id: 'script', label: '스크립트 리소스', grade: 'C', status: '개선 권장', score100: 66 },
+      { id: 'aeo', label: 'AEO/GEO', grade: 'B', status: '양호', score100: 64 },
+    ],
+  },
   improvements: [
     ...(MOCK_REPORT_PREVIEW.improvements ?? []),
     {

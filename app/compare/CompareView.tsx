@@ -23,8 +23,10 @@ import { CATEGORY_ORDER } from '@/lib/utils/report-improvement-category'
 import {
   compareAiseoWinner,
   compareCategoryWinner,
+  compareEffectiveCompositeWinner,
   compareMetricWinner,
   computeCompareSideMetrics,
+  computeEffectiveCompareScore100,
   type CompareWinner,
 } from '@/lib/utils/compare-report-metrics'
 import { deleteCompareSnapshotById, saveCompareSessionToIdb } from '@/lib/storage/site-improve-report-idb'
@@ -215,6 +217,15 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
   const winTotal = compareMetricWinner(metricsA, metricsB, 'totalIssues')
   const winHigh = compareMetricWinner(metricsA, metricsB, 'highPriority')
   const winAiseo = compareAiseoWinner(metricsA, metricsB)
+  const winComposite = compareEffectiveCompositeWinner(
+    reportA,
+    reportB,
+    metricsA,
+    metricsB,
+    localhostMode
+  )
+  const compositeScoreA = computeEffectiveCompareScore100(reportA, metricsA, localhostMode)
+  const compositeScoreB = computeEffectiveCompareScore100(reportB, metricsB, localhostMode)
   const winQuality = compareHigherBetter(
     qualityScore100(reportA),
     qualityScore100(reportB)
@@ -224,8 +235,17 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     securityScore100(reportB)
   )
 
+  /** 전반 우세: 규칙 기반 복합 점수 → 동률이면 이슈 수 → 높은 우선 → AEO */
   const previewWinner: CompareWinner =
-    winTotal !== 'tie' ? winTotal : winHigh !== 'tie' ? winHigh : winAiseo !== 'tie' ? winAiseo : 'tie'
+    winComposite !== 'tie'
+      ? winComposite
+      : winTotal !== 'tie'
+        ? winTotal
+        : winHigh !== 'tie'
+          ? winHigh
+          : winAiseo !== 'tie'
+            ? winAiseo
+            : 'tie'
 
   const winnerLabelFull = (w: CompareWinner): string => {
     if (w === 'tie') return '두 사이트가 전반적으로 비슷합니다'
@@ -293,6 +313,16 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
     const loseReport = w === 'a' ? reportB : reportA
 
     const reasons: string[] = []
+
+    if (winComposite !== 'tie' && winComposite === w) {
+      reasons.push(
+        `${winName}는 Lighthouse·axe 기반 대시보드 카드(로컬 비교 시 보안 카드 제외)·마크업/리소스 품질·AEO·이슈 부담을 조합한 복합 점수에서 상대적으로 유리합니다.`
+      )
+    } else if (winComposite === 'tie') {
+      reasons.push(
+        '복합 점수는 동률이어서, 개선 항목 수·높은 우선 이슈·AEO 순으로 우세를 보조 판단했습니다.'
+      )
+    }
 
     // 1) 카테고리 강점(이슈가 더 적은 쪽)을 최대 2개까지 선택
     const catCandidates = ([
@@ -412,10 +442,10 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
 
     // 3) 결론 문장
     reasons.push(
-      `종합하면 ${winName}는 핵심 지표와 카테고리 품질에서 ${loseName} 대비 더 안정적인 신호가 보여 “우세”로 판단했습니다.`
+      `종합하면 ${winName}는 복합 점수와 항목별 신호에서 ${loseName} 대비 더 안정적인 편으로 보여 우세로 판단했습니다.`
     )
 
-    return reasons.slice(0, 4)
+    return reasons.slice(0, 5)
   }
 
   const buildWinnerReasons = (w: CompareWinner): string[] => {
@@ -452,12 +482,17 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         <p className={styles.subtitle}>
           두 URL에 대해 동일한 파이프라인으로 분석한 뒤, 이슈 밀도·우선순위·항목별 지표를 나란히 봅니다.
           <br />
-          숫자가 작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). AEO/GEO 점수는 높을수록 유리합니다.
+          전반 우세는 개선 항목 개수만이 아니라, 규칙 기반 대시보드(Lighthouse·axe 등)·품질·AEO·이슈 부담을
+          섞은 복합 점수를 먼저 씁니다. 동률일 때만 전체 이슈 → 높은 우선 → AEO 순으로 가늠합니다.
+          <br />
+          숫자가 작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). 복합·AEO/GEO 점수는 높을수록
+          유리합니다.
           {localhostMode ? (
             <>
               <br />
               로컬호스트가 포함되어 있어, 공통 레이아웃/전역 설정에서 발생하는 이슈는 두 사이트 모두 동일하게
-              발생한다고 보고 비교 대상에서 제외합니다.
+              발생한다고 보고 비교 대상에서 제외합니다. 보안(TLS·헤더)은 배포 서버와 다를 수 있어 복합 점수·요약
+              표에서 제외합니다.
             </>
           ) : null}
         </p>
@@ -552,6 +587,20 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
 
         <h2 className={styles.sectionLabel}>Summary</h2>
         <div className={styles.summaryGrid}>
+          <div className={summaryMetricCardClass(winComposite)}>
+            <h3 className={styles.summaryTitle}>복합 평가 점수</h3>
+            <div className={styles.summaryValues}>
+              <div className={styles.summarySide}>
+                <span className={styles.summarySideLabel}>A</span>
+                <span className={styles.summaryNum}>{compositeScoreA}</span>
+              </div>
+              <div className={styles.summarySide}>
+                <span className={styles.summarySideLabel}>B</span>
+                <span className={styles.summaryNum}>{compositeScoreB}</span>
+              </div>
+            </div>
+            <div className={styles.summaryVerdict}>{winnerLabel(winComposite, 'A', 'B')}</div>
+          </div>
           <div className={summaryMetricCardClass(winTotal)}>
             <h3 className={styles.summaryTitle}>전체 이슈 수</h3>
             <div className={styles.summaryValues}>
@@ -629,10 +678,18 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                   <Verdict w={winQuality} emphasize={verdictEmphasize(winQuality)} />
                 </td>
               </tr>
-              {!localhostMode ? (
-                <>
-                  <tr>
-                    <td>Security(점수)</td>
+              <tr>
+                <td>Security(점수)</td>
+                {localhostMode ? (
+                  <>
+                    <td className={styles.cellMuted}>—</td>
+                    <td className={styles.cellMuted}>—</td>
+                    <td className={styles.verdictCol}>
+                      <span className={styles.cellMuted}>판단 제외</span>
+                    </td>
+                  </>
+                ) : (
+                  <>
                     <td className={winSecurityScore === 'a' ? styles.cellWin : styles.cellMuted}>
                       {securityScore100(reportA) != null ? `${securityScore100(reportA)}` : '—'} / —
                     </td>
@@ -642,9 +699,9 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
                     <td className={styles.verdictCol}>
                       <Verdict w={winSecurityScore} emphasize={verdictEmphasize(winSecurityScore)} />
                     </td>
-                  </tr>
-                </>
-              ) : null}
+                  </>
+                )}
+              </tr>
               {categories.map((cat) => {
                 const w = compareCategoryWinner(metricsA, metricsB, cat)
                 const ca = metricsA.byCategory[cat] ?? { count: 0, highCount: 0 }

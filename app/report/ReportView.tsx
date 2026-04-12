@@ -18,6 +18,8 @@ import {
 } from '@/lib/storage/site-improve-report-idb'
 import { MOCK_REPORT_PREVIEW, PREVIEW_REQUIREMENT_TEXT } from '@/lib/mocks/report-preview-data'
 import type { ReportData, ReportImprovement as Improvement } from '@/lib/types/report-data'
+import type { DashboardCard } from '@/lib/utils/grade-calculator'
+import { scoreToGradeAndStatus as score100ToGradeStatus } from '@/lib/utils/grade-calculator'
 import { CATEGORY_ORDER, getImprovementCategory } from '@/lib/utils/report-improvement-category'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
 import styles from './report.module.css'
@@ -64,25 +66,77 @@ function readReportOpenMeta(): ReportOpenMeta {
   return { source: 'analyze' }
 }
 
+/** `docs/GRADE_CRITERIA.md` 구간 — `grade-calculator`와 동일, null·비유효 시 대시 표시 */
 function scoreToGradeAndStatus(score: number | null | undefined): { grade: string; status: string } {
   if (score == null || !Number.isFinite(score)) return { grade: '—', status: '데이터 없음' }
   const s = Math.max(0, Math.min(100, Math.round(score)))
-  // docs/GRADE_CRITERIA.md 와 같은 구간 사용
-  let grade: string
-  if (s >= 97) grade = 'A+'
-  else if (s >= 93) grade = 'A'
-  else if (s >= 90) grade = 'A-'
-  else if (s >= 87) grade = 'B+'
-  else if (s >= 83) grade = 'B'
-  else if (s >= 80) grade = 'B-'
-  else if (s >= 77) grade = 'C+'
-  else if (s >= 73) grade = 'C'
-  else if (s >= 65) grade = 'C-'
-  else if (s >= 55) grade = 'D'
-  else grade = 'F'
+  return score100ToGradeStatus(s)
+}
 
-  const status = s >= 90 ? '우수' : s >= 75 ? '양호' : s >= 60 ? '개선 권장' : '개선 필요'
-  return { grade, status }
+/**
+ * `generateReport`가 채운 `dashboard`(규칙 기반 `computeDashboardGrades`)를 그대로 표시.
+ * 구 저장분에 `dashboard`가 없으면 추정 가능한 항목만 채우고 나머지는 안내.
+ */
+function buildHeroScoreCards(reportData: ReportData): DashboardCard[] {
+  if (reportData.dashboard?.cards?.length) {
+    return reportData.dashboard.cards
+  }
+
+  const qSem = reportData.qualityAudit?.semanticScore
+  const qEff = reportData.qualityAudit?.efficiencyScore
+  const qualityScore =
+    qSem != null && qEff != null
+      ? Math.round((Number(qSem) + Number(qEff)) / 2)
+      : qSem ?? qEff ?? null
+  const qualityG = scoreToGradeAndStatus(qualityScore)
+
+  const aiseo = reportData.aiseo
+  let aeo: DashboardCard
+  if (aiseo?.grade && String(aiseo.grade).trim()) {
+    aeo = {
+      id: 'aeo',
+      label: 'AEO/GEO',
+      grade: String(aiseo.grade).trim(),
+      status: 'AI 검색 대응',
+      score100: typeof aiseo.overallScore === 'number' ? aiseo.overallScore : undefined,
+    }
+  } else if (typeof aiseo?.overallScore === 'number' && !Number.isNaN(aiseo.overallScore)) {
+    const g = scoreToGradeAndStatus(aiseo.overallScore)
+    aeo = {
+      id: 'aeo',
+      label: 'AEO/GEO',
+      grade: g.grade,
+      status: g.status,
+      score100: aiseo.overallScore,
+    }
+  } else {
+    aeo = { id: 'aeo', label: 'AEO/GEO', grade: '—', status: '데이터 없음' }
+  }
+
+  const empty = (id: string, label: string): DashboardCard => ({
+    id,
+    label,
+    grade: '—',
+    status: '데이터 없음',
+  })
+
+  return [
+    {
+      id: 'overall',
+      label: 'OVERALL GRADE',
+      grade: '—',
+      status: '리포트에 미포함(재분석 시 표시)',
+    },
+    empty('seo', 'SEO 최적화'),
+    empty('performance', '성능/로딩'),
+    empty('accessibility', '접근성'),
+    empty('security', '보안'),
+    { id: 'quality', label: '마크업/리소스', grade: qualityG.grade, status: qualityG.status },
+    empty('mobile', '모바일 대응'),
+    empty('image', '이미지 최적화'),
+    empty('script', '스크립트 리소스'),
+    aeo,
+  ]
 }
 
 export default function ReportView({ initialPreview = false }: ReportViewProps) {
@@ -358,25 +412,8 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     return group?.items ?? []
   }
 
-  // 상단 히어로: 좌측 미리보기+OVERALL, 우측 3×3 메트릭 (SEO, 성능, 접근성, 보안, PWA, 모바일, 이미지, 스크립트, AEO/GEO)
-  const qualityScore =
-    reportData.qualityAudit?.semanticScore != null && reportData.qualityAudit?.efficiencyScore != null
-      ? Math.round((Number(reportData.qualityAudit.semanticScore) + Number(reportData.qualityAudit.efficiencyScore)) / 2)
-      : reportData.qualityAudit?.semanticScore ?? reportData.qualityAudit?.efficiencyScore ?? null
-  const qualityGrade = scoreToGradeAndStatus(qualityScore)
-
-  const scoreCards = [
-    { id: 'overall', label: 'OVERALL GRADE', grade: 'A+', status: '우수' },
-    { id: 'seo', label: 'SEO 최적화', grade: 'A', status: '양호' },
-    { id: 'performance', label: '성능/로딩', grade: 'B+', status: '개선 권장' },
-    { id: 'accessibility', label: '접근성', grade: 'A', status: '양호' },
-    { id: 'security', label: '보안', grade: 'A++', status: '우수' },
-    { id: 'quality', label: '마크업/리소스', grade: qualityGrade.grade, status: qualityGrade.status },
-    { id: 'mobile', label: '모바일 대응', grade: 'A+', status: '우수' },
-    { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 필요' },
-    { id: 'script', label: '스크립트 리소스', grade: 'B', status: '개선 권장' },
-    { id: 'aeo', label: 'AEO/GEO', grade: reportData.aiseo?.grade ?? 'A+', status: 'AI 검색 대응' },
-  ]
+  // 상단 히어로: `reportData.dashboard` = 분석 파이프라인의 `computeDashboardGrades` 결과(규칙 기반)
+  const scoreCards = buildHeroScoreCards(reportData)
   const overallCard = scoreCards[0]!
   const metricCards = scoreCards.slice(1)
   const prioritiesLine =

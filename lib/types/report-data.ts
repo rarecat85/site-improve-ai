@@ -3,6 +3,8 @@
  * API/목업 필드가 늘어나면 여기와 `lib/mocks/report-preview-data.ts`를 함께 맞춥니다.
  */
 
+import type { DashboardCard } from '@/lib/utils/grade-calculator'
+
 export interface ReportImprovement {
   title: string
   priority: 'high' | 'medium' | 'low'
@@ -89,5 +91,13 @@ export interface ReportData {
       metricScore?: number
       description: string
     }>
+  }
+  /**
+   * 규칙 기반 대시보드(`computeDashboardGrades`). `generateReport` 응답에 포함.
+   * 비교 화면의 복합 평가·전반 우세 판정에 사용.
+   */
+  dashboard?: {
+    overallScore100: number
+    cards: DashboardCard[]
   }
 }

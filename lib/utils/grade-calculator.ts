@@ -116,7 +116,7 @@ function axePenalty100(violationCount: number): number {
   return Math.min(25, violationCount * 3)
 }
 
-function scoreToGradeAndStatus(score100: number): { grade: string; status: string } {
+export function scoreToGradeAndStatus(score100: number): { grade: string; status: string } {
   let grade: string
   if (score100 >= 97) grade = 'A+'
   else if (score100 >= 93) grade = 'A'

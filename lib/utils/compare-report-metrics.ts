@@ -94,3 +94,107 @@ export function compareAiseoWinner(a: CompareSideMetrics, b: CompareSideMetrics)
   if (b.aiseoOverall > a.aiseoOverall) return 'b'
   return 'tie'
 }
+
+/** 품질 점검(시멘틱·효율) 평균 0~100 */
+function qualityScore100FromReport(report: ReportData): number | null {
+  const qa = report.qualityAudit
+  const s = qa?.semanticScore
+  const e = qa?.efficiencyScore
+  const ss = typeof s === 'number' && Number.isFinite(s) ? s : null
+  const ee = typeof e === 'number' && Number.isFinite(e) ? e : null
+  if (ss == null && ee == null) return null
+  if (ss != null && ee != null) return Math.round((ss + ee) / 2)
+  return ss ?? ee
+}
+
+function securityScore100FromReport(report: ReportData): number | null {
+  const raw = report.securityAudit?.score100
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null
+  return Math.round(raw)
+}
+
+/**
+ * `dashboard.cards`에서 `overall` 제외 평균. 로컬 비교 시 보안 카드는 배포와 신호가 달라 제외.
+ */
+export function averageDashboardCardsScore(
+  report: ReportData,
+  options: { excludeSecurity: boolean }
+): number | null {
+  const cards = report.dashboard?.cards
+  if (!cards?.length) return null
+  const scores: number[] = []
+  for (const c of cards) {
+    if (c.id === 'overall') continue
+    if (options.excludeSecurity && c.id === 'security') continue
+    if (typeof c.score100 === 'number' && Number.isFinite(c.score100)) {
+      scores.push(Math.max(0, Math.min(100, c.score100)))
+    }
+  }
+  if (scores.length === 0) return null
+  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+}
+
+/**
+ * 개선 항목 개수만으로 절대 판단하지 않도록, 이슈·높음 우선을 0~100 "부담 경량 점수"로 환산(낮을수록 불리).
+ */
+export function issueBurdenScore100(metrics: CompareSideMetrics): number {
+  const penalty = Math.min(58, metrics.totalIssues * 1.15 + metrics.highPriority * 3.5)
+  return Math.max(0, Math.round(100 - penalty))
+}
+
+/**
+ * 비교 화면 **전반 우세** 1순위 판단용 복합 점수(높을수록 유리).
+ * - `dashboard`가 있으면: 카드 평균 + 이슈 부담 + (품질·AEO·보안 중 있는 것) 보조 평균
+ * - 없으면(구 저장분): 이슈 부담·품질·AEO·(비로컬 시) 보안의 산술 평균
+ */
+export function computeEffectiveCompareScore100(
+  report: ReportData,
+  metrics: CompareSideMetrics,
+  localhostMode: boolean
+): number {
+  const cardAvg = averageDashboardCardsScore(report, { excludeSecurity: localhostMode })
+  const issue = issueBurdenScore100(metrics)
+  const q = qualityScore100FromReport(report)
+  const a = metrics.aiseoOverall
+  const sec = localhostMode ? null : securityScore100FromReport(report)
+
+  if (cardAvg != null) {
+    let blend = 0.58 * cardAvg + 0.24 * issue
+    const aux: number[] = []
+    if (q != null) aux.push(q)
+    if (a != null) aux.push(a)
+    if (sec != null) aux.push(sec)
+    if (aux.length > 0) {
+      blend += 0.18 * (aux.reduce((x, y) => x + y, 0) / aux.length)
+    } else {
+      blend += 0.18 * cardAvg
+    }
+    return Math.round(Math.min(100, Math.max(0, blend)))
+  }
+
+  const fallback: number[] = [issue]
+  if (q != null) fallback.push(q)
+  if (a != null) fallback.push(a)
+  if (sec != null) fallback.push(sec)
+  return Math.round(
+    Math.min(100, Math.max(0, fallback.reduce((x, y) => x + y, 0) / fallback.length))
+  )
+}
+
+/** 높을수록 유리. 차이가 epsilon 미만이면 동률 */
+export function compareHigherBetterEpsilon(scoreA: number, scoreB: number, epsilon = 2): CompareWinner {
+  if (Math.abs(scoreA - scoreB) < epsilon) return 'tie'
+  return scoreA > scoreB ? 'a' : 'b'
+}
+
+export function compareEffectiveCompositeWinner(
+  reportA: ReportData,
+  reportB: ReportData,
+  metricsA: CompareSideMetrics,
+  metricsB: CompareSideMetrics,
+  localhostMode: boolean
+): CompareWinner {
+  const sa = computeEffectiveCompareScore100(reportA, metricsA, localhostMode)
+  const sb = computeEffectiveCompareScore100(reportB, metricsB, localhostMode)
+  return compareHigherBetterEpsilon(sa, sb, 2)
+}

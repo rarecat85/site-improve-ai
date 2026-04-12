@@ -591,16 +591,58 @@ function buildCategoryPromptContent(
 }
 
 /**
- * 카테고리 공통: 우선순위·피드백 품질 원칙 (전문 컨설턴트·역할 기반 에이전트에서 흔히 쓰는 기준을 요약; 외부 프롬프트 원문을 복사하지 않음).
+ * 단일 페이지 리포트: 본문(<main>) 우선 타이브레이커는 **로컬호스트일 때만** SEO·성능·모범사례에 적용.
+ * 접근성은 URL과 무관하게 항상 본문·컴포넌트 수정을 우선하는 편이 자연스러워 항상 true.
+ * AEO/GEO·Overview·UX/UI 규칙 기반 파생은 이 함수 밖에서 처리.
  */
-function getSharedReportQualityRules(): string {
+function shouldIncludeBodyContentTiebreaker(
+  category: ReportCategory,
+  analyzedUrl: string | undefined
+): boolean {
+  if (category === '접근성') return true
+  if (category === 'AEO/GEO') return false
+  if (!analyzedUrl) return false
+  try {
+    const u = new URL(analyzedUrl)
+    return u.hostname === 'localhost' || u.hostname === '127.0.0.1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 카테고리 공통: 우선순위·피드백 품질 원칙 (전문 컨설턴트·역할 기반 에이전트에서 흔히 쓰는 기준을 요약; 외부 프롬프트 원문을 복사하지 않음).
+ * @param variant `aeo-geo`: 메타·구조화·인용이 주된 AEO/GEO이므로 "본문 우선" 타이브레이커를 넣지 않음(로컬/배포 동일하게 aiseo 권장이 사라지는 현상 방지).
+ */
+function getSharedReportQualityRules(
+  variant: 'default' | 'aeo-geo' = 'default',
+  includeBodyContentTiebreaker = true
+): string {
+  const bodyFirstTiebreaker =
+    variant === 'aeo-geo' || !includeBodyContentTiebreaker
+      ? ''
+      : `
+- **본문(<main>·페이지 주요 콘텐츠 영역) 우선 타이브레이커**: 위 심각도·영향이 **비슷한** 두 항목을 비교할 때, 수정이 **\`<main>\` 또는 본문 마크업·카피·본문 내 미디어/컴포넌트**에서 끝나는 쪽에 **더 높은 priority**(또는 같은 등급 안에서 상대적으로 앞에 둘 만한 이유)를 부여하세요. 반면 **전역 크롬(공통 헤더·푸터)·순수 \`<head>\`만·HTTP 헤더·빌드·CDN·서드파티 정책** 위주 조치는 동급이면 한 단계 **낮게** 잡아도 됩니다. 단, **차단적 보안·접근성·노출 이슈**는 위치와 관계없이 심각도를 최우선으로 하세요.`
+
+  const aeoPriorityHint =
+    variant === 'aeo-geo'
+      ? `
+- **AEO/GEO 전용**: 우선순위는 **aiseo-audit의 카테고리 점수(낮을수록 우선)**와 **권장 개선사항**을 기준으로 하세요. 메타·구조화 데이터(JSON-LD)·인용·엔티티 명확성 관련 조치는 **정당한 항목**이며, "본문만 중요" 이유로 제거하거나 무조건 낮추지 마세요.`
+      : ''
+
+  const priorityReasonExtra =
+    variant === 'aeo-geo'
+      ? ' aiseo 권장·점수를 **priorityReason**에 한 어구라도 넣을 것.'
+      : includeBodyContentTiebreaker
+        ? ' 본문 우선으로 올리거나 크롬 쪽을 낮춘 경우 **그 판단**(예: "본문 LCP 요소")을 한 어구 넣을 것 (근거 없는 단정 금지).'
+        : ' 영향 범위·데이터 근거에 따라 head·메타·전역 설정 쪽이 더 시급하면 그 이유를 **priorityReason**에 한 어구로 남길 것 (근거 없는 단정 금지).'
+
   return `
 **우선순위 (priority + priorityReason)**
 - **high**: 실사용자·검색 노출·보안·접근에 **광범위하거나 즉각적**인 영향이 예상되거나, 사용자 요구사항과 **직접** 맞닿은 미충족, 또는 제공 데이터에서 **심각도가 분명히 높은** 감사·위반(점수 매우 낮음, 차단적 접근성 이슈 등)일 때.
 - **medium**: 중요하나 범위가 한정되거나 대응 경로가 비교적 명확할 때.
-- **low**: 개선 여지는 있으나 당장 전환·노출·차단을 막지 않거나 영향이 제한적일 때.
-- **본문(<main>·페이지 주요 콘텐츠 영역) 우선 타이브레이커**: 위 심각도·영향이 **비슷한** 두 항목을 비교할 때, 수정이 **\`<main>\` 또는 본문 마크업·카피·본문 내 미디어/컴포넌트**에서 끝나는 쪽에 **더 높은 priority**(또는 같은 등급 안에서 상대적으로 앞에 둘 만한 이유)를 부여하세요. 반면 **전역 크롬(공통 헤더·푸터)·순수 \`<head>\`만·HTTP 헤더·빌드·CDN·서드파티 정책** 위주 조치는 동급이면 한 단계 **낮게** 잡아도 됩니다. 단, **차단적 보안·접근성·노출 이슈**는 위치와 관계없이 심각도를 최우선으로 하세요.
-- **priorityReason**에는 위 기준 중 무엇에 해당하는지, **가능하면 감사명·수치·위반 유형**을 한 어구라도 넣을 것. 본문 우선으로 올리거나 크롬 쪽을 낮춘 경우 **그 판단**(예: "본문 LCP 요소")을 한 어구 넣을 것 (근거 없는 단정 금지).
+- **low**: 개선 여지는 있으나 당장 전환·노출·차단을 막지 않거나 영향이 제한적일 때.${bodyFirstTiebreaker}${aeoPriorityHint}
+- **priorityReason**에는 위 기준 중 무엇에 해당하는지, **가능하면 감사명·수치·위반 유형**을 한 어구라도 넣을 것.${priorityReasonExtra}
 
 **피드백·설명 품질**
 - **description**: "개선하세요" 등 **추상 한 줄** 금지. **무엇을** 어디에 적용할지, **왜**(어떤 감사·데이터 때문인지), **다음 한 단계**가 무엇인지 **짧은 단계**로.
@@ -609,7 +651,21 @@ function getSharedReportQualityRules(): string {
 `
 }
 
-function getCategoryJsonRules(category: string): string {
+function getCategoryJsonRules(
+  category: string,
+  qualityVariant: 'default' | 'aeo-geo' = 'default',
+  includeBodyContentTiebreaker = true
+): string {
+  const emptyArrayRule =
+    qualityVariant === 'aeo-geo'
+      ? '- improvements가 **[]**인 것은 **aiseo 블록이 "데이터 없음"이거나**, 권장이 없고 **모든 카테고리 점수가 충분히 높아** 실질적 개선이 불필요한 경우로 한정하세요. 권장 문구가 한 줄이라도 있으면 반드시 해당 내용을 풀어 1건 이상 작성하세요.'
+      : '데이터에 개선점이 거의 없으면 improvements는 빈 배열 [] 가능.'
+
+  const forbidLine =
+    qualityVariant === 'aeo-geo'
+      ? '- 제공된 **aiseo 블록 밖**의 이슈를 새로 만들어내기 (Lighthouse/axe 감사를 AEO/GEO에 끌어오지 말 것)'
+      : '- 제공된 Lighthouse/axe/aiseo 목록에 없는 이슈를 새로 만들어내기'
+
   return `
 **필수 규칙**
 - category: 반드시 "${category}" 만 (다른 카테고리 금지)
@@ -627,15 +683,15 @@ function getCategoryJsonRules(category: string): string {
 - codeExample: HTML/CSS/메타/헤더 예시 등 가능하면 문자열로. 없으면 빈 문자열 "". 마크다운 코드펜스(\`\`\`) 사용 금지.
 - source: 반드시 아래 중 하나에 맞출 것 — "Lighthouse · 감사제목 또는 ID", "axe-core · 규칙ID", "aiseo-audit · …". **위에 없는 감사를 지어내지 말 것.**
 
-${getSharedReportQualityRules()}
+${qualityVariant === 'aeo-geo' ? getSharedReportQualityRules('aeo-geo') : getSharedReportQualityRules('default', includeBodyContentTiebreaker)}
 **금지**
-- 제공된 Lighthouse/axe/aiseo 목록에 없는 이슈를 새로 만들어내기
+${forbidLine}
 - 동일 원인의 중복 항목 — 필요하면 하나로 합쳐 설명에 병합
 - 근거 없는 "중요하다/급하다"만 반복하기
 
 응답: JSON만 (설명·마크다운 없음).
 {"improvements":[{"title":"...","category":"${category}","priority":"high|medium|low","impact":"높음|중간|낮음","difficulty":"쉬움|보통|어려움","scope":"content|global","description":"...","codeExample":"...","source":"...","matchesRequirement":true|false,"requirementRelevance":"...","priorityReason":"..."}]}
-데이터에 개선점이 거의 없으면 improvements는 빈 배열 [] 가능.
+${emptyArrayRule}
 `
 }
 
@@ -652,16 +708,58 @@ const CATEGORY_FOCUS: Record<ReportCategory, string> = {
     '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명. **점수나 권장 텍스트와의 연결**을 description·priorityReason에 드러낼 것.',
 }
 
+/** AEO/GEO: aiseo 권장·점수는 곧 “제공된 목록”이므로 일반 카테고리의 Lighthouse 중심 지침과 분리 */
+function buildAeoGeoCategoryPrompt(
+  focus: string,
+  requirement: string,
+  content: string,
+  jsonRules: string
+): string {
+  return `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
+
+## 이 카테고리 초점
+${focus}
+
+## 사용자 요구사항
+${requirement}
+요구사항에 명시된 관심 영역과 직접 맞닿은 항목에 matchesRequirement=true 를 우선 부여하고, **우선순위(priority)** 를 매길 때도 동일 영역이면 한 단계 유리하게 검토하세요.
+
+## 실제 분석 결과 (유일한 근거 — 아래 aiseo-audit 블록에 없는 항목은 만들지 말 것)
+${content}
+
+지침:
+- 아래 블록의 **카테고리별 점수**·**권장 개선사항**은 모두 aiseo-audit가 제시한 **공식 분석 결과**입니다. 권장 문구가 있으면 **각 권장을** 실행 가능한 개선안으로 풀어쓰세요(출처: \`aiseo-audit · …\`).
+- 권장이 없고 점수만 있으면 **상대적으로 낮은 카테고리**부터 우선순위를 두고 개선안을 작성하세요.
+- **메타·구조화 데이터·인용·엔티티 명확성** 관련 조치는 AEO/GEO의 핵심이며 **global scope**로 두어도 됩니다. 다른 카테고리에서 쓰는 "본문만 우선" 규칙으로 이런 항목을 버리지 마세요.
+- Lighthouse/axe 감사를 이 카테고리에 끌어오지 마세요.
+- 항목 수는 품질 우선 (불필요한 중복·일반론 금지).
+- 배경 설명·서론 없이 JSON만.
+
+${jsonRules}`
+}
+
 /** 카테고리 1개에 대해 AI 호출 후 improvements 배열만 반환 */
 async function generateReportForCategory(
   category: ReportCategory,
   requirement: string,
   analysisResults: AnalysisResults,
-  metaLines: string
+  metaLines: string,
+  analyzedUrl?: string
 ): Promise<any[]> {
   const content = buildCategoryPromptContent(category, analysisResults, metaLines)
   const focus = CATEGORY_FOCUS[category]
-  const prompt = `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
+  const qualityVariant = category === 'AEO/GEO' ? 'aeo-geo' : 'default'
+  const includeBodyTiebreaker = shouldIncludeBodyContentTiebreaker(category, analyzedUrl)
+  const jsonRules = getCategoryJsonRules(category, qualityVariant, includeBodyTiebreaker)
+
+  const nonAeoPriorityGuideline = includeBodyTiebreaker
+    ? `- **우선순위는 영향 범위·심각도·요구사항 부합**을 종합해 일관되게 매기고, **심각도가 비슷하면 \`<main>\`/본문에서 고칠 수 있는 항목을 더 높게** 잡으세요. 각 항목의 priorityReason에 그 판단 근거를 남기세요.`
+    : `- **우선순위는 영향 범위·심각도·요구사항 부합**과 **감사 데이터**를 종합해 일관되게 매기세요. 라이브(비로컬) URL에서는 <head>·메타·전역 리소스·HTTP와 관련된 개선도 제공 감사에 근거하면 포함합니다. 각 항목의 priorityReason에 근거를 남기세요.`
+
+  const prompt =
+    category === 'AEO/GEO'
+      ? buildAeoGeoCategoryPrompt(focus, requirement, content, jsonRules)
+      : `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
 
 ## 이 카테고리 초점
 ${focus}
@@ -676,10 +774,10 @@ ${content}
 지침:
 - 위 블록에 **나열된** 감사·위반만 개선안으로 옮기세요. 목록이 비어 있거나 "없음"이면 improvements는 [] 이거나, 데이터에 근거한 1건 이하만.
 - 항목 수는 품질 우선 (불필요한 중복·일반론 금지).
-- **우선순위는 영향 범위·심각도·요구사항 부합**을 종합해 일관되게 매기고, **심각도가 비슷하면 \`<main>\`/본문에서 고칠 수 있는 항목을 더 높게** 잡으세요. 각 항목의 priorityReason에 그 판단 근거를 남기세요.
+${nonAeoPriorityGuideline}
 - 배경 설명·서론 없이 JSON만.
 
-${getCategoryJsonRules(category)}`
+${jsonRules}`
 
   let raw: string
   if (category === 'SEO') {
@@ -743,6 +841,90 @@ ${issues.join('\n')}
 }
 
 /**
+ * Gemini가 빈 배열/파싱 실패로 AEO/GEO 개선안을 내지 못할 때, aiseo-audit 원본으로 최소한의 항목을 채움.
+ * (권장 배열 → 우선; 없으면 낮은 카테고리 점수 기준)
+ */
+function deriveAiseoImprovementsFallback(aiseo: any): any[] {
+  if (!aiseo || typeof aiseo !== 'object') return []
+
+  const out: any[] = []
+  const rawRecs = Array.isArray(aiseo.recommendations) ? aiseo.recommendations : []
+  const recTexts: string[] = []
+  for (const r of rawRecs) {
+    const t =
+      typeof r === 'string'
+        ? r.trim()
+        : String(r?.recommendation ?? r?.text ?? r?.message ?? r?.description ?? r?.title ?? '').trim()
+    if (t) recTexts.push(t)
+  }
+
+  recTexts.slice(0, 12).forEach((text, i) => {
+    const title = text.length > 80 ? `${text.slice(0, 77).trimEnd()}…` : text
+    out.push({
+      title,
+      category: 'AEO/GEO',
+      priority: i === 0 ? 'high' : 'medium',
+      impact: i === 0 ? '높음' : '중간',
+      difficulty: '보통',
+      scope: 'global',
+      description: text,
+      codeExample: '',
+      source: `aiseo-audit · 권장 ${i + 1}`,
+      matchesRequirement: false,
+      requirementRelevance: 'AI 검색·인용 준비도(aiseo-audit) 권장 항목',
+      priorityReason: `aiseo-audit 권장 개선사항 ${i + 1}번`,
+    })
+  })
+
+  if (out.length > 0) return out
+
+  const pairs: { name: string; score: number }[] = []
+  const cat = aiseo.categories
+  if (cat && typeof cat === 'object' && !Array.isArray(cat)) {
+    for (const [, c] of Object.entries(cat)) {
+      if (!c || typeof c !== 'object') continue
+      const name = String((c as { name?: string; id?: string }).name ?? (c as { id?: string }).id ?? '항목')
+      const s = Number((c as { score?: number }).score)
+      if (Number.isFinite(s)) pairs.push({ name, score: s })
+    }
+  } else if (Array.isArray(cat)) {
+    for (const c of cat) {
+      if (!c || typeof c !== 'object') continue
+      const name = String(c.name ?? c.id ?? c.categoryName ?? '항목')
+      const s = Number(c.score ?? c.scoreValue)
+      if (Number.isFinite(s)) pairs.push({ name, score: s })
+    }
+  }
+
+  if (pairs.length === 0) return []
+
+  pairs.sort((a, b) => a.score - b.score)
+  const threshold = 75
+  const lows = pairs.filter((p) => p.score < threshold)
+  const picked = lows.length > 0 ? lows.slice(0, 5) : pairs.slice(0, Math.min(3, pairs.length))
+
+  picked.forEach(({ name, score }, i) => {
+    const rounded = Math.round(score)
+    out.push({
+      title: `${name} 영역 점수 보강 (현재 ${rounded})`,
+      category: 'AEO/GEO',
+      priority: i === 0 && rounded < 60 ? 'high' : 'medium',
+      impact: rounded < 60 ? '높음' : '중간',
+      difficulty: '보통',
+      scope: 'global',
+      description: `aiseo-audit 카테고리 "${name}" 점수가 ${rounded}입니다. AI 검색·인용 준비도 측면에서 해당 영역을 우선 보강하는 것을 권장합니다.`,
+      codeExample: '',
+      source: `aiseo-audit · ${name}`,
+      matchesRequirement: false,
+      requirementRelevance: 'aiseo-audit 카테고리 점수 기반',
+      priorityReason: `카테고리 점수 ${rounded}, 상대적으로 낮은 편`,
+    })
+  })
+
+  return out
+}
+
+/**
  * 7단계: 리포트 생성 — 항목별 전담 AI 병렬 호출 후 결과 병합
  * SEO → OpenAI, 접근성·성능·모범사례 → Claude, AEO/GEO → Gemini
  * (Overview 보조: 목적·타겟(세분 필드)·유사 사이트 → OpenAI, 페이지 구조 요약 → Claude — `analyzeContentInsights` 등)
@@ -777,15 +959,31 @@ export async function generateReport(
   ].join('\n')
 
   try {
+    const singlePageIsLocalhost = Boolean(analyzedUrl && isLocalhostUrl(analyzedUrl))
+
+    const localhostNote =
+      singlePageIsLocalhost
+        ? '\n\n[로컬호스트 분석 정책]\n- 이 URL은 로컬 개발/스테이징 환경으로 간주합니다.\n- 전역 템플릿/공통 레이아웃(헤더·푸터·크롬) 및 <head> 메타·구조화 데이터(JSON-LD), canonical/robots, 사이트 전역 SEO 설정은 **라이브 배포 환경 코드에서 처리될 가능성이 높으므로**, 해당 성격의 개선안은 되도록 제외하세요.\n- 단, 제공 데이터에서 명백한 차단적 보안/접근성/검색 노출 문제가 확인되면 예외적으로 포함할 수 있습니다.\n- 가능한 한 <main>·본문(body 흐름)에서 해결 가능한 개선안(scope=content)을 우선 제시하세요.\n'
+        : ''
+
     const categoryResults = await Promise.all(
       REPORT_CATEGORIES.map((cat) => {
-        const localhostNote =
-          analyzedUrl && isLocalhostUrl(analyzedUrl)
-            ? '\n\n[로컬호스트 분석 정책]\n- 이 URL은 로컬 개발/스테이징 환경으로 간주합니다.\n- 전역 템플릿/공통 레이아웃(헤더·푸터·크롬) 및 <head> 메타·구조화 데이터(JSON-LD), canonical/robots, 사이트 전역 SEO 설정은 **라이브 배포 환경 코드에서 처리될 가능성이 높으므로**, 해당 성격의 개선안은 되도록 제외하세요.\n- 단, 제공 데이터에서 명백한 차단적 보안/접근성/검색 노출 문제가 확인되면 예외적으로 포함할 수 있습니다.\n- 가능한 한 <main>·본문(body 흐름)에서 해결 가능한 개선안(scope=content)을 우선 제시하세요.\n'
-            : ''
-        return generateReportForCategory(cat, requirement + localhostNote, analysisResults, metaLines)
+        // AEO/GEO는 메타·구조화·인용이 핵심이라 로컬 정책 문구와 충돌하면 개선안이 전부 사라짐 → 같은 정책을 붙이지 않음(배포 URL과 동일한 aiseo 근거 사용).
+        const note = cat === 'AEO/GEO' ? '' : localhostNote
+        return generateReportForCategory(cat, requirement + note, analysisResults, metaLines, analyzedUrl)
       })
     )
+
+    const aeoIdx = REPORT_CATEGORIES.indexOf('AEO/GEO')
+    if (aeoIdx >= 0) {
+      const aeoList = categoryResults[aeoIdx]
+      if ((!aeoList || aeoList.length === 0) && analysisResults.aiseo) {
+        const fallback = deriveAiseoImprovementsFallback(analysisResults.aiseo)
+        if (fallback.length > 0) {
+          categoryResults[aeoIdx] = fallback
+        }
+      }
+    }
 
     const allImprovements: any[] = []
     for (let i = 0; i < REPORT_CATEGORIES.length; i++) {
@@ -816,13 +1014,13 @@ export async function generateReport(
       highPriority: allImprovements.filter((i) => i.priority === 'high').length,
       byCategory,
       estimatedImpact: '요구사항에 따른 개선 효과 기대',
-      priorityCriteria:
-        '요구사항 부합 항목을 먼저 두고, 영향·심각도·데이터 근거에 따라 high/medium/low를 매겼습니다. 비슷한 심각도에서는 본문(<main>)·주 콘텐츠에서 해결 가능한 항목을 상대적으로 우선했습니다. 기본 분석(요구사항 외) 항목도 포함했습니다.',
+      priorityCriteria: singlePageIsLocalhost
+        ? '요구사항 부합 항목을 먼저 두고, 영향·심각도·데이터 근거에 따라 high/medium/low를 매겼습니다. 로컬호스트 URL에서는 SEO·성능·모범사례에 한해 비슷한 심각도일 때 본문(<main>)·주 콘텐츠에서 해결 가능한 항목을 상대적으로 우선했습니다. 접근성은 본문·컴포넌트 중심으로 정리했습니다. 기본 분석(요구사항 외) 항목도 포함했습니다.'
+        : '요구사항 부합 항목을 먼저 두고, 영향·심각도·데이터 근거에 따라 high/medium/low를 매겼습니다. 라이브 URL에서는 SEO·성능·모범사례에 head·메타·전역 리소스 관련 개선도 감사 근거가 있으면 포함했습니다. 접근성은 본문·컴포넌트 중심으로 정리했습니다. 기본 분석 항목도 포함했습니다.',
       requirementAlignment: `요구사항 부합 ${allImprovements.filter((i) => i.matchesRequirement).length}건, 기본 분석 ${allImprovements.filter((i) => !i.matchesRequirement).length}건 포함.`,
     }
 
-    const scopeMode: 'all' | 'content' =
-      analyzedUrl && isLocalhostUrl(analyzedUrl) ? 'content' : 'all'
+    const scopeMode: 'all' | 'content' = singlePageIsLocalhost ? 'content' : 'all'
     const qualityAudit = buildQualityAudit({ analysisResults, analyzedUrl, scopeMode })
     if (qualityAudit) {
       allImprovements.push(
@@ -831,7 +1029,7 @@ export async function generateReport(
     }
 
     const securityAudit =
-      analyzedUrl && isLocalhostUrl(analyzedUrl)
+      singlePageIsLocalhost
         ? null
         : analyzedUrl
           ? buildSecurityAudit({ analysisResults, analyzedUrl })

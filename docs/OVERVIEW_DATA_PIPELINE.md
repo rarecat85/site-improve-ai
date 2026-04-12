@@ -34,7 +34,7 @@
 
 **백엔드**에서는 `lib/services/ai.ts`의 `generateReport`가 `computeDashboardGrades`( `lib/utils/grade-calculator.ts` )를 호출해 **Lighthouse·axe·HTTP 응답 메타·aiseo** 등을 규칙 기반으로 0~100점화하고, 등급·상태 문자열을 만든 뒤 **`report.dashboard`**에 넣습니다. 세부 구간·감사 ID는 [GRADE_CRITERIA.md](./GRADE_CRITERIA.md) 참고.
 
-**프론트**(`app/report/ReportView.tsx`)에서는 히어로 그리드의 대부분 등급이 **코드에 고정된 예시 값**으로 그려지고, **AEO/GEO 카드만** `reportData.aiseo?.grade` 등 실데이터를 참고하는 구조입니다. 따라서 **실제 분석 점수와 화면의 등급이 다를 수 있으며**, 서버가 내려주는 `dashboard`를 카드에 매핑하면 일치시킬 수 있습니다.
+**프론트**(`app/report/ReportView.tsx`)에서는 히어로 그리드를 **`reportData.dashboard.cards` 그대로** 그립니다(위 백엔드 산출과 동일). `dashboard`가 없는 **구 저장 리포트**만 `qualityAudit`·`aiseo`로 일부 카드를 채우고, 나머지는 `—`·안내 문구로 둡니다(재분석 시 전체 등급 표시).
 
 ---
 
@@ -50,11 +50,13 @@
 
 ### 3.1 로컬호스트(개발/스테이징) URL 정책
 
-분석 대상 URL의 호스트가 `localhost` 또는 `127.0.0.1`이면, 리포트 생성 프롬프트에 아래 정책을 덧붙입니다.
+분석 대상 URL의 호스트가 `localhost` 또는 `127.0.0.1`이면, **카테고리별 전담 리포트** 요구사항에 아래 성격의 정책 문단을 덧붙입니다(**AEO/GEO 전담 호출 제외**).
 
 - 전역 템플릿/공통 레이아웃(헤더·푸터·크롬) 및 `<head>` 메타·구조화 데이터(JSON-LD), canonical/robots, 사이트 전역 SEO 설정은 **라이브 배포 환경 코드에서 처리될 가능성이 높다**고 보고, 해당 성격의 개선안은 **되도록 제외**합니다.
 - 단, 제공 데이터에서 **차단적 보안/접근성/검색 노출** 문제가 분명하면 예외적으로 포함할 수 있습니다.
 - 가능한 한 `<main>`·본문(body 흐름)에서 해결 가능한 개선안을 우선 제시하도록 유도합니다.
+
+**추가(우선순위 루브릭):** “비슷한 심각도일 때 본문 vs 전역” 타이브레이커는 **SEO·성능·모범사례에 한해 로컬호스트에서만** 강하게 쓰이고, **접근성은 항상** 본문·컴포넌트 쪽을 우선하는 문구를 씁니다. **라이브 URL**의 SEO·성능·모범사례는 메타·전역 이슈도 감사 근거가 있으면 포함할 수 있습니다. **AEO/GEO**는 aiseo 전용 프롬프트·폴백이 별도입니다. 상세는 [`docs/REPORT_CATEGORY_TABS.md`](./REPORT_CATEGORY_TABS.md) **§4.2**를 참고하세요.
 
 ---
 
@@ -172,3 +174,9 @@ SEO·접근성·성능·모범사례·AEO/GEO·UX/UI·기타 탭의 **필터 규
 코드 기준으로는 비교 지표 집계 시 아래처럼 `scope !== 'global'`만 포함하는 형태입니다.
 
 - 구현: `app/compare/CompareView.tsx`의 `scopeMode`, `lib/utils/compare-report-metrics.ts`의 `computeCompareSideMetrics`
+
+### 11.3 전반 우세(복합 점수)
+
+“전반적으로 우세” 카드·요약 문구는 **개선 항목 개수만**으로 결정하지 않고, `ReportData.dashboard.cards`의 규칙 기반 점수( `overall` 제외 평균, **로컬호스트가 한쪽이라도 있으면 `security` 카드 제외** )와 이슈 부담·품질·AEO 등을 조합한 `computeEffectiveCompareScore100` → `compareEffectiveCompositeWinner`를 **최우선**으로 씁니다. 동률(차이 2 미만)이면 전체 이슈 수 → 높은 우선 이슈 → AEO 종합 점수 순으로 이어집니다.
+
+로컬 비교 시 **Security 행**은 수치 대신 “판단 제외”로 표시되며, 복합 점수에도 보안 카드가 끼어 들어가지 않습니다.

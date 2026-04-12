@@ -104,11 +104,28 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 - 보안 점검 문서: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 - 개선 항목 `source` 예: `security-audit · csp-missing`
 
-### 4.2 로컬호스트(개발/스테이징) URL의 개선안 생성 정책
+### 4.2 로컬호스트(개발/스테이징) URL과 “본문 우선” 지침 (단일 페이지 `generateReport`)
 
-분석 대상 URL이 `localhost` 또는 `127.0.0.1`이면, 리포트 생성 프롬프트에서 **전역 템플릿/공통 레이아웃 및 `<head>` 메타·구조화 데이터(JSON-LD) 관련 개선안은 되도록 제외**하도록 지시합니다. 대신 가능한 한 `<main>`·본문에서 해결 가능한 항목(`scope=content`)을 우선 제시하도록 유도합니다.
+**정책 문단(`[로컬호스트 분석 정책]`)**
 
-추가로, **보안(Security) 상세 점검은 로컬호스트에서는 생략**될 수 있습니다(배포 환경에 좌우되는 요소가 많기 때문).
+분석 대상 URL이 `localhost` 또는 `127.0.0.1`이면, **SEO · 접근성 · 성능 · 모범사례** 카테고리 전담 호출의 사용자 요구사항 문자열에 **전역 템플릿/공통 레이아웃 및 `<head>` 메타·구조화 데이터(JSON-LD) 관련 개선안은 되도록 제외**하고, 가능한 한 `<main>`·본문에서 해결 가능한 항목(`scope=content`)을 우선 제시하라는 문단을 덧붙입니다.
+
+- **AEO/GEO** 전담 호출에는 이 문단을 **붙이지 않습니다.** aiseo 권장이 메타·구조화·인용과 맞닿아 있어, 동일 문단과 목표가 충돌할 수 있기 때문입니다.
+
+**우선순위 루브릭 안의 “본문 우선 타이브레이커”** (`getSharedReportQualityRules`)
+
+- **SEO · 성능 · 모범사례**: 호스트가 **로컬호스트일 때만** “비슷한 심각도면 `<main>`/본문 쪽을 더 앞에” 같은 타이브레이커 문구를 넣습니다.
+- **접근성**: URL과 무관하게 **항상** 본문·컴포넌트 대응을 우선하는 쪽으로 타이브레이커를 둡니다.
+- **라이브(비로컬) URL**의 SEO·성능·모범사례: 전역·메타·헤더 관련 개선도 **제공된 감사에 근거하면** 포함할 수 있도록 유도합니다.
+
+**AEO/GEO**
+
+- 전용 프롬프트(`buildAeoGeoCategoryPrompt`)와 aiseo 전용 JSON 규칙 variant로 Lighthouse 중심 지침과 분리합니다.
+- Gemini가 빈 `improvements`를 내거나 파싱에 실패하면, **aiseo 권장 문구·낮은 카테고리 점수**로 규칙 기반 항목을 채우는 폴백(`deriveAiseoImprovementsFallback`)이 있습니다.
+
+**보안(Security)**
+
+- **보안(Security) 상세 점검은 로컬호스트에서는 생략**될 수 있습니다(배포 환경에 좌우되는 요소가 많기 때문). Security 탭 개선안은 `securityAudit` 규칙 기반 파생입니다.
 
 ### 4.1 Lighthouse 요약이 만들어지는 방식 (`buildLighthouseSummary`)
 
@@ -132,7 +149,7 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 - **카테고리별 점수** 칩 (`aiseo.categories`)
 - **권장 개선사항** 상위 5개 (`aiseo.recommendations`)
 
-이 부분은 **aiseo-audit 패키지**가 반환한 구조를 그대로 가공해 `generateReport`가 `parsed.aiseo`에 넣은 값입니다. 아래 **개선사항 리스트**는 여전히 **Gemini가 `AEO/GEO` 전담으로 생성한 `improvements`** 입니다.
+이 부분은 **aiseo-audit 패키지**가 반환한 구조를 그대로 가공해 `generateReport`가 `parsed.aiseo`에 넣은 값입니다. 아래 **개선사항 리스트**는 원칙적으로 **Gemini가 `AEO/GEO` 전담으로 생성한 `improvements`** 이며, 비어 있으면 **aiseo 데이터 기반 규칙 폴백**으로 채워질 수 있습니다.
 
 ---
 
@@ -158,5 +175,12 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 | `lib/utils/json-ld-snippet.ts` | SEO 프롬프트용 JSON-LD 요약 |
 | `lib/utils/grade-calculator.ts` | `formatResponseMetaForPrompt` 등 |
 | `lib/types/report-data.ts` | `ReportImprovement`, `ReportData` |
+| `lib/utils/compare-report-metrics.ts` | 비교 집계·`computeEffectiveCompareScore100`(복합 점수)·`compareEffectiveCompositeWinner` |
 
 코드와 문서가 다르면 **코드가 우선**입니다.
+
+---
+
+## 8. 비교 화면(Compare) 전반 우세
+
+단일 리포트 탭과 별개로, **비교 화면**의 “전반 우세”는 개선 항목 **건수만**이 아니라 `ReportData.dashboard` 카드(로컬 포함 시 보안 카드 제외)·이슈 부담·품질·AEO를 조합한 복합 점수를 우선합니다. 상세는 [`OVERVIEW_DATA_PIPELINE.md`](./OVERVIEW_DATA_PIPELINE.md) **§11.3**을 참고하세요.
