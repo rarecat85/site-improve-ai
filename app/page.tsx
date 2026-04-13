@@ -254,11 +254,11 @@ export default function Home() {
 
     try {
       const reportA = await fetchAnalyzeReportStream(trimmedA, priorities, {
-        onStreamProgress: (v) => setProgress(Math.round(v * 0.5)),
+        onStreamProgress: (v) => setProgress(v * 0.5),
       })
       setProgress(50)
       const reportB = await fetchAnalyzeReportStream(trimmedB, priorities, {
-        onStreamProgress: (v) => setProgress(50 + Math.round(v * 0.5)),
+        onStreamProgress: (v) => setProgress(50 + v * 0.5),
       })
       setProgress(100)
 

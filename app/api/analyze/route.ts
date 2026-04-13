@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MIN_VIABLE_HTML_LENGTH } from '@/lib/constants/analysis-pipeline'
 import { getMissingAiEnvKeys } from '@/lib/config/ai-keys'
 import { userFacingAnalysisError } from '@/lib/utils/analysis-error-message'
+import { subscribeProgressRamp } from '@/lib/utils/analysis-progress-ramp'
 
 // Next.js API Route 타임아웃 설정 (최대 5분)
 export const maxDuration = 300
@@ -98,13 +99,21 @@ export async function POST(request: NextRequest) {
         const send = (obj: object) => {
           controller.enqueue(encoder.encode(JSON.stringify(obj) + '\n'))
         }
+        const sendProgress = (value: number) => {
+          send({ type: 'progress', value })
+        }
         try {
-          send({ type: 'progress', value: 5 })
+          sendProgress(5)
 
           const { runAiseoAudit } = await import('@/lib/services/run-aiseo-audit')
           const { fetchCruxSummary } = await import('@/lib/services/crux')
           console.log('Step 1-4: Analyzing website (CrUX는 병렬로 조회)...')
 
+          /** 페이지·Lighthouse·axe 등 1차 수집(시간이 김) — 상한 아래에서 서서히 증가 */
+          const stopRamp1 = subscribeProgressRamp(sendProgress, 5, 43.5, {
+            intervalMs: 360,
+            step: 1.05,
+          })
           const analysisPromise = analyzeWebsite(url)
           const cruxPromise = fetchCruxSummary(url).catch((e) => {
             console.warn('CrUX failed:', e)
@@ -112,17 +121,23 @@ export async function POST(request: NextRequest) {
           })
           const analysisResults = await analysisPromise
           const cruxResult = await cruxPromise
+          stopRamp1()
           if (cruxResult !== null) {
             analysisResults.crux = cruxResult
           }
-          send({ type: 'progress', value: 45 })
+          sendProgress(45)
 
           console.log('Running AEO/GEO audit...')
+          const stopRamp2 = subscribeProgressRamp(sendProgress, 45, 53.5, {
+            intervalMs: 360,
+            step: 1.0,
+          })
           const aiseoResult = await runAiseoAudit(url)
+          stopRamp2()
           if (aiseoResult != null) {
             analysisResults.aiseo = aiseoResult
           }
-          send({ type: 'progress', value: 55 })
+          sendProgress(55)
 
           console.log('Step 5-7: Generating report and content insights...')
           const settledDom = analysisResults.domForArchitecture
@@ -142,6 +157,10 @@ export async function POST(request: NextRequest) {
             ? extractPageArchitecture(archSourceHtml)
             : { rows: [], sections: [] }
 
+          const stopRamp3 = subscribeProgressRamp(sendProgress, 55, 82.5, {
+            intervalMs: 380,
+            step: 1.0,
+          })
           const [reportResult, contentInsights, archSummarized] = await Promise.all([
             generateReport(requirement, analysisResults, url),
             analyzeContentInsights(analysisResults),
@@ -149,6 +168,7 @@ export async function POST(request: NextRequest) {
               ? summarizePageArchitectureSections(archExtract.sections, archExtract.rows)
               : Promise.resolve({ sections: [], rows: archExtract.rows }),
           ])
+          stopRamp3()
           const report = reportResult
           if (archSummarized.rows.length > 0) {
             report.pageArchitecture = {
@@ -162,13 +182,17 @@ export async function POST(request: NextRequest) {
             report.audienceProfileDetail = contentInsights.audienceProfileDetail
             report.audienceBehaviorDetail = contentInsights.audienceBehaviorDetail
           }
-          send({ type: 'progress', value: 85 })
+          sendProgress(85)
           if (
             contentInsights?.contentSummary &&
             contentInsights?.audienceSegmentLabel &&
             contentInsights?.audienceProfileDetail &&
             contentInsights?.audienceBehaviorDetail
           ) {
+            const stopRamp4 = subscribeProgressRamp(sendProgress, 85, 93.5, {
+              intervalMs: 400,
+              step: 0.95,
+            })
             try {
               const similarSites = await findSimilarSites(url, contentInsights.contentSummary, {
                 audienceSegmentLabel: contentInsights.audienceSegmentLabel,
@@ -178,11 +202,15 @@ export async function POST(request: NextRequest) {
               if (similarSites?.length) report.similarSites = similarSites
             } catch (e) {
               console.warn('findSimilarSites failed:', e)
+            } finally {
+              stopRamp4()
             }
+          } else {
+            sendProgress(91)
           }
-          send({ type: 'progress', value: 95 })
+          sendProgress(95)
           send({ type: 'report', report })
-          send({ type: 'progress', value: 100 })
+          sendProgress(100)
         } catch (streamError: any) {
           console.error('Analysis error:', streamError)
           const errorMessage = userFacingAnalysisError(
