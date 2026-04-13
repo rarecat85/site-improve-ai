@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import { AnalysisLoadingView } from '@/app/components/analysis/AnalysisLoadingView'
 import { AnalysisErrorView } from '@/app/components/analysis/AnalysisErrorView'
 import {
+  COMPARE_LOADING_MESSAGES,
+  getCompareLoadingMessage,
   getLoadingMessage,
   LOADING_MESSAGE_INTERVAL_MS,
   LOADING_MESSAGES,
   MANDATORY_PRE_NAV_LOADING_MESSAGE,
-  MANDATORY_PRE_NAV_MESSAGE_INDEX,
 } from '@/lib/analysis-loading-messages'
 import { AppModal } from '@/app/components/ui/AppModal'
 import uiModalStyles from '@/app/components/ui/app-modal.module.css'
@@ -65,6 +66,8 @@ export default function Home() {
   const [url2, setUrl2] = useState('')
   const [priorities, setPriorities] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  /** 로딩 중 순환 멘트: 비교 분석은 전용 문구+기존 문구(더 긴 배열) */
+  const [loadingKind, setLoadingKind] = useState<'single' | 'comparison'>('single')
   const [progress, setProgress] = useState(0)
   const [messageTick, setMessageTick] = useState(0)
   const [loadingSubtextOverride, setLoadingSubtextOverride] = useState<string | null>(null)
@@ -79,12 +82,14 @@ export default function Home() {
   const [emptyUrlModalOpen, setEmptyUrlModalOpen] = useState(false)
   const [compareUrlsModal, setCompareUrlsModal] = useState(false)
   const [compareSameUrlModal, setCompareSameUrlModal] = useState(false)
-  const messageTickRef = useRef(0)
   const urlInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    messageTickRef.current = messageTick
-  }, [messageTick])
+  /** 결과 화면으로 넘어가기 직전, 필수 멘트를 항상 `MANDATORY_PRE_NAV_HOLD_MS`만큼 노출 */
+  const holdMandatoryPreNavMessage = async () => {
+    setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+    await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
+    setLoadingSubtextOverride(null)
+  }
 
   useEffect(() => {
     setHideHamburger(loading || analysisError != null)
@@ -98,11 +103,13 @@ export default function Home() {
       setLoadingSubtextOverride(null)
       return
     }
+    const maxTick =
+      loadingKind === 'comparison' ? COMPARE_LOADING_MESSAGES.length - 1 : LOADING_MESSAGES.length - 1
     const interval = setInterval(() => {
-      setMessageTick((t) => (t >= LOADING_MESSAGES.length - 1 ? t : t + 1))
+      setMessageTick((t) => (t >= maxTick ? t : t + 1))
     }, LOADING_MESSAGE_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [loading])
+  }, [loading, loadingKind])
 
   const togglePriority = (id: string) => {
     setPriorities((prev) => {
@@ -113,6 +120,7 @@ export default function Home() {
   }
 
   const runAnalysis = async (trimmedUrl: string) => {
+    setLoadingKind('single')
     setLoading(true)
     setResult(null)
     setAnalysisError(null)
@@ -146,11 +154,7 @@ export default function Home() {
           return false
         }
       }
-      if (messageTickRef.current < MANDATORY_PRE_NAV_MESSAGE_INDEX) {
-        setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
-        await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
-        setLoadingSubtextOverride(null)
-      }
+      await holdMandatoryPreNavMessage()
       try {
         const meta: ReportOpenMeta = { source: 'analyze' }
         sessionStorage.setItem(REPORT_OPEN_META_SESSION_KEY, JSON.stringify(meta))
@@ -240,6 +244,7 @@ export default function Home() {
   }
 
   const runComparison = async (trimmedA: string, trimmedB: string) => {
+    setLoadingKind('comparison')
     setLoading(true)
     setResult(null)
     setAnalysisError(null)
@@ -276,11 +281,7 @@ export default function Home() {
         })
         return
       }
-      if (messageTickRef.current < MANDATORY_PRE_NAV_MESSAGE_INDEX) {
-        setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
-        await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
-        setLoadingSubtextOverride(null)
-      }
+      await holdMandatoryPreNavMessage()
       navigated = true
       router.push('/compare')
     } catch (error) {
@@ -379,7 +380,10 @@ export default function Home() {
     return (
       <AnalysisLoadingView
         progress={progress}
-        subtext={loadingSubtextOverride ?? getLoadingMessage(messageTick)}
+        subtext={
+          loadingSubtextOverride ??
+          (loadingKind === 'comparison' ? getCompareLoadingMessage(messageTick) : getLoadingMessage(messageTick))
+        }
       />
     )
   }

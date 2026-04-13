@@ -1,4 +1,7 @@
-/** 빠르게 끝난 경우에만 결과 이동 직전 3초간 강제로 보여 줄 문구 (배열 순서와 무관) */
+/**
+ * 이동 직전에 홈(`page.tsx`의 `holdMandatoryPreNavMessage`)에서 **항상** 3초간 노출.
+ * 순환 배열(`LOADING_MESSAGES`) 안에도 포함되어 자연 스크롤 중 한 번 나올 수 있음.
+ */
 export const MANDATORY_PRE_NAV_LOADING_MESSAGE =
   '개발자 성과평가가 좋은 점수를 받도록 기원하는 중입니다.'
 
@@ -36,5 +39,31 @@ export function getLoadingMessage(messageTick: number): string {
   return LOADING_MESSAGES[index]
 }
 
-/** 자연 순환에서 이 인덱스에 도달했다면 필수 문구를 이미 거쳤으므로 이동 전 추가 노출 생략 */
+/** `LOADING_MESSAGES` 안에서 필수 문구가 나오는 틱 인덱스(참고). 이동 직전 노출은 틱과 무관하게 항상 수행 */
 export const MANDATORY_PRE_NAV_MESSAGE_INDEX = LOADING_MESSAGES.indexOf(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+
+/**
+ * 비교 분석: URL 두 개를 같은 파이프라인으로 순차 실행하므로 로딩이 길어짐 — 전용 멘트를 앞에 붙인 뒤 `LOADING_MESSAGES`와 이어집니다.
+ */
+export const COMPARE_LOADING_EXTRA = [
+  '두개사이트를 한번에 분석을 시키다니.. 힘들지만 해야겠죠..',
+  '둘 다 누군가 열심히 만든 사이트일텐데 꼭 비교를 해야만 하는건지.. 참 힘들군요...',
+  '앗! 스크린샷을 찍었는데 로딩이 덜 끝나서 다시 찍어야합니다.',
+  '공정한 비교를 위해 같은 기준으로 비춰보고 있습니다.',
+  '복합 점수로 “전반적으로 어느 쪽이 유리한지” 판단할 준비를 하고 있습니다.',
+  '저를 개발한 개발자는 효율충이거든요.. 좀 더 효율적으로 개선할 수 있는 방법을 찾고있습니다.',
+  'A와 B의 개선 권고 개수·우선순위를 각각 읽은 뒤 맞대보는 중입니다.',
+  '기다림에 지쳐가신다면, 잠시 기지개 한번 피고 오실까요?',
+  '잠깐, 아직 B 쪽 AI가 리포트를 정리하고 있을 수 있습니다.',
+]
+
+export const COMPARE_LOADING_MESSAGES = [...COMPARE_LOADING_EXTRA, ...LOADING_MESSAGES]
+
+/** `COMPARE_LOADING_MESSAGES`에서 필수 문구 인덱스(참고). 이동 직전 노출은 단일·비교 공통으로 항상 수행 */
+export const COMPARE_MANDATORY_PRE_NAV_MESSAGE_INDEX =
+  COMPARE_LOADING_EXTRA.length + MANDATORY_PRE_NAV_MESSAGE_INDEX
+
+export function getCompareLoadingMessage(messageTick: number): string {
+  const index = Math.min(messageTick, COMPARE_LOADING_MESSAGES.length - 1)
+  return COMPARE_LOADING_MESSAGES[index]
+}
