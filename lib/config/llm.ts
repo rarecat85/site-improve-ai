@@ -27,6 +27,7 @@ function parseGeminiFallbackModels(): readonly string[] {
 export const LLM_CONFIG = {
   openaiModel: process.env.OPENAI_MODEL?.trim() || 'gpt-4o',
   anthropicModel: process.env.ANTHROPIC_MODEL?.trim() || 'claude-haiku-4-5-20251001',
+  /** AEO/GEO·교차 폴백 공통 주 모델. 유료 API 대체 시에도 동일 ID로 맞추면 동작·품질 일관에 유리 */
   geminiModel: process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash',
   /** 주 모델이 재시도 가능한 서버 오류로 실패할 때 순서대로 시도 */
   geminiFallbackModels: parseGeminiFallbackModels(),

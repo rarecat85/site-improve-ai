@@ -34,6 +34,7 @@
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini **주** 모델 ID |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3-flash-preview,gemini-2.0-flash` | 쉼표 구분. 주 모델 호출이 **재시도 가능한 인프라 오류**(HTTP 5xx·429, `UNAVAILABLE`/`overloaded` 등)로 실패할 때 **순서대로** 대체 시도 (`lib/services/ai.ts`의 `callGemini`). API 키·안전 필터·쿼터 메시지 등은 폴백하지 않고 그대로 오류 처리 |
+| `LLM_FALLBACK_TO_GEMINI` | (미설정=활성) | `false`/`0`/`no`가 아니면, OpenAI·Claude 호출 실패(또는 해당 키 없음) 시 **동일 프롬프트**를 `GEMINI_MODEL`(+`GEMINI_FALLBACK_MODELS`)로 재시도. **400**은 제외 |
 | `OPENAI_SEED` | (미설정) | 정수. OpenAI Chat Completions의 `seed`(지원 모델에서 재현성 보조) |
 
 **한계:** 클라우드 API·모델 업데이트·안전 필터·토큰 한계에 따라 **완전 결정적 출력은 보장되지 않습니다.**
@@ -44,4 +45,4 @@
 
 - 측정: `lib/services/analyzer.ts` (Lighthouse 플래그 + `page.setViewport` / `setUserAgent`)
 - 폼 팩터 상수: `lib/constants/measurement.ts`
-- LLM: `lib/config/llm.ts`, `lib/services/ai.ts`의 `callOpenAI` / `callClaude` / `callGemini` (Gemini는 주 모델 + `GEMINI_FALLBACK_MODELS` 연쇄)
+- LLM: `lib/config/llm.ts`, `lib/services/ai.ts`의 `callOpenAI` / `callClaude` / `callGemini` (Gemini는 주 모델 + `GEMINI_FALLBACK_MODELS` 연쇄; 유료 실패 시 `callOpenAiOrGeminiFallback` / `callClaudeOrGeminiFallback`)
