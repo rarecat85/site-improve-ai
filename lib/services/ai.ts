@@ -14,6 +14,11 @@ import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
 import { buildQualityAudit } from '@/lib/utils/quality-audit'
 import { buildSecurityAudit, deriveSecurityImprovementsFromAudit } from '@/lib/utils/security-audit'
 import { deriveMobileImprovements } from '@/lib/utils/mobile-audit'
+import { deriveAccessibilityImprovementsFromAudits } from '@/lib/utils/accessibility-improvements-fallback'
+import {
+  deriveBestPracticesImprovementsFromAudits,
+  derivePerformanceImprovementsFromAudits,
+} from '@/lib/utils/lighthouse-category-improvements-fallback'
 import type {
   ArchitectureSectionSnippet,
   PageArchitectureSectionSummary,
@@ -50,38 +55,107 @@ export interface SimilarSite {
   fameReason?: string
 }
 
-// Gemini API 호출 헬퍼 함수
+/** 5xx·과부하·일시 장애 등 — 다른 모델로 재시도할 가치가 있는 오류 */
+function isRetryableGeminiInfrastructureError(error: unknown): boolean {
+  const e = error as {
+    status?: number
+    statusCode?: number
+    code?: number
+    message?: string
+    errorDetails?: { reason?: string }[]
+  }
+  const status = e.status ?? e.statusCode ?? e.code
+  if (typeof status === 'number') {
+    if (status === 429) return true
+    if (status >= 500 && status < 600) return true
+  }
+  const msg = String(e.message ?? '').toLowerCase()
+  const reasons = (e.errorDetails ?? []).map((d) => String(d.reason ?? '').toUpperCase())
+  if (reasons.some((r) => r.includes('UNAVAILABLE') || r.includes('OVERLOADED'))) return true
+  if (
+    msg.includes('503') ||
+    msg.includes('500') ||
+    msg.includes('502') ||
+    msg.includes('504') ||
+    msg.includes('unavailable') ||
+    msg.includes('overloaded') ||
+    msg.includes('internal error') ||
+    msg.includes('deadline exceeded') ||
+    msg.includes('econnreset') ||
+    msg.includes('fetch failed')
+  ) {
+    return true
+  }
+  return false
+}
+
+function geminiModelChain(): string[] {
+  const primary = LLM_CONFIG.geminiModel
+  const fallbacks = [...LLM_CONFIG.geminiFallbackModels]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const id of [primary, ...fallbacks]) {
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+// Gemini API 호출 헬퍼 함수 (주 모델 실패 시 폴백 모델 순차 시도)
 async function callGemini(prompt: string): Promise<string> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY가 설정되지 않았습니다.')
   }
 
-  const model = genAI.getGenerativeModel({
-    model: LLM_CONFIG.geminiModel,
-    generationConfig: {
-      temperature: LLM_CONFIG.temperature,
-      maxOutputTokens: 4096,
-    },
-  })
-  
-  try {
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    return response.text()
-  } catch (error: any) {
-    console.error('Gemini API error:', error)
-    
-    // 에러 메시지 개선
-    if (error?.message?.includes('API_KEY')) {
-      throw new Error('Gemini API 키가 유효하지 않습니다.')
-    } else if (error?.message?.includes('quota') || error?.message?.includes('QUOTA')) {
-      throw new Error('Gemini API 할당량이 초과되었습니다.')
-    } else if (error?.message?.includes('safety')) {
-      throw new Error('Gemini API 안전 필터에 의해 차단되었습니다.')
+  const chain = geminiModelChain()
+  let lastError: unknown
+
+  for (let i = 0; i < chain.length; i++) {
+    const modelId = chain[i]!
+    const model = genAI.getGenerativeModel({
+      model: modelId,
+      generationConfig: {
+        temperature: LLM_CONFIG.temperature,
+        maxOutputTokens: 4096,
+      },
+    })
+
+    try {
+      const result = await model.generateContent(prompt)
+      const response = await result.response
+      const text = response.text()
+      if (modelId !== LLM_CONFIG.geminiModel) {
+        console.warn(`[Gemini] 주 모델 대신 폴백 모델 사용: ${modelId}`)
+      }
+      return text
+    } catch (error: unknown) {
+      lastError = error
+      console.error(`Gemini API error (model=${modelId}):`, error)
+
+      const canTryNext = i < chain.length - 1 && isRetryableGeminiInfrastructureError(error)
+      if (canTryNext) {
+        console.warn(`[Gemini] ${modelId} 재시도 가능 오류 — 다음 모델 시도`)
+        continue
+      }
+
+      const errAny = error as { message?: string }
+      if (errAny?.message?.includes('API_KEY')) {
+        throw new Error('Gemini API 키가 유효하지 않습니다.')
+      }
+      if (errAny?.message?.includes('quota') || errAny?.message?.includes('QUOTA')) {
+        throw new Error('Gemini API 할당량이 초과되었습니다.')
+      }
+      if (errAny?.message?.includes('safety')) {
+        throw new Error('Gemini API 안전 필터에 의해 차단되었습니다.')
+      }
+
+      throw new Error(`Gemini API 오류: ${errAny?.message || '알 수 없는 오류'}`)
     }
-    
-    throw new Error(`Gemini API 오류: ${error?.message || '알 수 없는 오류'}`)
   }
+
+  const last = lastError as { message?: string } | undefined
+  throw new Error(`Gemini API 오류: ${last?.message || '알 수 없는 오류'}`)
 }
 
 /** Anthropic Claude API 호출 (접근성·성능·모범사례 리포트 + 페이지 구조 Section Summaries 전담) */
@@ -637,15 +711,26 @@ function getSharedReportQualityRules(
         ? ' 본문 우선으로 올리거나 크롬 쪽을 낮춘 경우 **그 판단**(예: "본문 LCP 요소")을 한 어구 넣을 것 (근거 없는 단정 금지).'
         : ' 영향 범위·데이터 근거에 따라 head·메타·전역 설정 쪽이 더 시급하면 그 이유를 **priorityReason**에 한 어구로 남길 것 (근거 없는 단정 금지).'
 
+  const auditGroundedPracticality =
+    variant === 'aeo-geo'
+      ? `
+**aiseo 근거 항목의 제안 강도**
+- 권장 문구·점수에 **근거한** 항목은, **완벽한 검증이나 100% 성공**을 요구하지 말고 **실무에서 시도할 만한 구체적 조치**를 제시하면 됩니다. 다만 **aiseo에 없는 사실·수치·이슈는 만들지 말 것.**
+- 사용자에게 보이는 문장은 **한국어**로만 작성(영어 권장 원문이 있으면 번역·의역).`
+      : `
+**감사·위반에 명시된 이슈의 제안 강도**
+- 프롬프트에 **나열된** Lighthouse 실패 감사·axe 위반 등에 대해서는, 그 이슈를 **완화·해결할 가능성이 있는** 현실적인 수정 방향을 쓰는 것이 목표입니다. **완벽한 해법**이나 **추가 측정 없이 확정**일 필요는 없으며, 일반적으로 **적용 시 해당 이슈에 도움이 될 만한 수준**(실무적으로 과반 정도 신뢰가 되는 조치)이면 충분합니다.
+- **금지는 동일**: 위 목록에 **없는** 이슈·수치·감사명을 **새로 만들지 말 것.**`
+
   return `
 **우선순위 (priority + priorityReason)**
 - **high**: 실사용자·검색 노출·보안·접근에 **광범위하거나 즉각적**인 영향이 예상되거나, 사용자 요구사항과 **직접** 맞닿은 미충족, 또는 제공 데이터에서 **심각도가 분명히 높은** 감사·위반(점수 매우 낮음, 차단적 접근성 이슈 등)일 때.
 - **medium**: 중요하나 범위가 한정되거나 대응 경로가 비교적 명확할 때.
 - **low**: 개선 여지는 있으나 당장 전환·노출·차단을 막지 않거나 영향이 제한적일 때.${bodyFirstTiebreaker}${aeoPriorityHint}
-- **priorityReason**에는 위 기준 중 무엇에 해당하는지, **가능하면 감사명·수치·위반 유형**을 한 어구라도 넣을 것.${priorityReasonExtra}
+- **priorityReason**에는 위 기준 중 무엇에 해당하는지, **가능하면 감사명·수치·위반 유형**을 한 어구라도 넣을 것.${priorityReasonExtra}${auditGroundedPracticality}
 
 **피드백·설명 품질**
-- **description**: "개선하세요" 등 **추상 한 줄** 금지. **무엇을** 어디에 적용할지, **왜**(어떤 감사·데이터 때문인지), **다음 한 단계**가 무엇인지 **짧은 단계**로.
+- **description**: "개선하세요" 등 **추상 한 줄** 금지. **무엇을** 어디에 적용할지, **왜**(어떤 감사·데이터 때문인지), **다음 한 단계**가 무엇인지 **짧은 단계**로. 감사에 **근거한 이슈**라면 완벽한 해법이 아니어도, **완화에 도움이 되는 구체적 조치**로 작성해도 됨.
 - **impact**: 이 카테고리 관점에서 **사용자 또는 비즈니스에 어떤 변화가 기대되는지** 한 문장으로 구체화. 데이터에 수치가 있으면 반영.
 - **difficulty**: 마크업·CMS만으로 되는지, 빌드·헤더·인프라까지 건드리는지 **솔직히** 평가.
 `
@@ -659,12 +744,20 @@ function getCategoryJsonRules(
   const emptyArrayRule =
     qualityVariant === 'aeo-geo'
       ? '- improvements가 **[]**인 것은 **aiseo 블록이 "데이터 없음"이거나**, 권장이 없고 **모든 카테고리 점수가 충분히 높아** 실질적 개선이 불필요한 경우로 한정하세요. 권장 문구가 한 줄이라도 있으면 반드시 해당 내용을 풀어 1건 이상 작성하세요.'
-      : '데이터에 개선점이 거의 없으면 improvements는 빈 배열 [] 가능.'
+      : '- **improvements가 []**인 것은, 위 "실제 분석 결과" 블록에 **이 카테고리에 해당하는 개선 필요 감사·위반이 전혀 없을 때만** 허용. 블록에 **하나라도** 실패 감사·axe 위반·SEO/구조화 이슈(해당 시)가 있으면 **그 근거마다** 개선안을 작성하세요(동일 원인은 합쳐도 됨). **완벽한 해법**이 아니어도 되며, 감사 근거 위반을 **완화할 만한** 구체적 조치면 됩니다.'
 
   const forbidLine =
     qualityVariant === 'aeo-geo'
       ? '- 제공된 **aiseo 블록 밖**의 이슈를 새로 만들어내기 (Lighthouse/axe 감사를 AEO/GEO에 끌어오지 말 것)'
       : '- 제공된 Lighthouse/axe/aiseo 목록에 없는 이슈를 새로 만들어내기'
+
+  const aeoKoreanOnly =
+    qualityVariant === 'aeo-geo'
+      ? `
+**AEO/GEO 한국어 (필수)**
+- \`title\`, \`description\`, \`requirementRelevance\`, \`priorityReason\`은 **한국어 문장**만 사용. aiseo 권장·라벨이 영어여도 **의미를 한국어로** 쓸 것(고유명사·약어는 괄호 병기 가능).
+- 사용자 대면 필드에 **영어 문장만 복사**하지 말 것. \`codeExample\`의 코드·속성명은 영어일 수 있음.`
+      : ''
 
   return `
 **필수 규칙**
@@ -676,13 +769,13 @@ function getCategoryJsonRules(
 - priorityReason: 한 문장, 한국어 (우선순위 기준 + 가능한 경우 근거 언급)
 - impact: 높음 | 중간 | 낮음 — 사용자·비즈니스 관점, **피드백 품질** 지침 준수
 - difficulty: 쉬움 | 보통 | 어려움 — 구현 난이도, 과소·과대 평가 금지
-- description: 한국어, **실행 가능한** 수정 단계. 위 분석 데이터에 근거할 것.
+- description: 한국어, **실행·검토 가능한** 수정 단계. 위 분석 데이터에 근거할 것. 감사에 **나온 이슈**는 완화에 도움이 되는 방향이면 **과도한 확신**을 요구하지 말 것.
 - scope: "content" | "global"
   - content: 본문(<main>·body 흐름)에서 해결 가능한 항목
   - global: 전역 레이아웃/설정(<head>, 공통 헤더·푸터, HTTP 헤더·빌드·인프라 등) 성격이 강한 항목
 - codeExample: HTML/CSS/메타/헤더 예시 등 가능하면 문자열로. 없으면 빈 문자열 "". 마크다운 코드펜스(\`\`\`) 사용 금지.
 - source: 반드시 아래 중 하나에 맞출 것 — "Lighthouse · 감사제목 또는 ID", "axe-core · 규칙ID", "aiseo-audit · …". **위에 없는 감사를 지어내지 말 것.**
-
+${aeoKoreanOnly}
 ${qualityVariant === 'aeo-geo' ? getSharedReportQualityRules('aeo-geo') : getSharedReportQualityRules('default', includeBodyContentTiebreaker)}
 **금지**
 ${forbidLine}
@@ -705,7 +798,7 @@ const CATEGORY_FOCUS: Record<ReportCategory, string> = {
   모범사례:
     '보안 헤더, HTTPS, 신뢰할 수 있는 서드파티, **PWA/설치 가능성** 등 **제공된 모범사례·PWA 감사** 및 위 **HTTP 응답 메타(보안 헤더 누락)**를 근거로 하세요. **보안·신뢰에 직접적인 누락**은 우선순위를 높게.',
   'AEO/GEO':
-    '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명. **점수나 권장 텍스트와의 연결**을 description·priorityReason에 드러낼 것.',
+    '제공된 aiseo 점수·권장만. 인용·구조화·명확한 엔티티 설명. **점수나 권장과의 연결**을 description·priorityReason에 드러낼 것. **사용자에게 보이는 모든 문장은 한국어**(원문 권장이 영어면 의미를 한국어로 풀어쓰기; 고유명사·기술 식별자만 괄호 병기 가능).',
 }
 
 /** AEO/GEO: aiseo 권장·점수는 곧 “제공된 목록”이므로 일반 카테고리의 Lighthouse 중심 지침과 분리 */
@@ -715,7 +808,12 @@ function buildAeoGeoCategoryPrompt(
   content: string,
   jsonRules: string
 ): string {
-  return `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
+  return `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **aiseo 분석에 근거한** 조치와 근거를 제시할 것. **aiseo 블록에 없는 이슈·수치는 만들지 말 것.** 권장·점수에 **근거한** 항목은 실무에서 시도할 만한 구체적 다음 단계면 충분(완벽 검증 불필요).
+
+## 출력 언어 (필수)
+- JSON 안에서 사용자에게 보이는 **모든 문장**(\`title\`, \`description\`, \`requirementRelevance\`, \`priorityReason\` 등)은 **한국어로만** 작성하세요.
+- 위 분석 블록에 **영어** 권장문·카테고리 라벨이 있어도, 리포트에는 **한국어로 번역·요약**하여 넣으세요. RFC·API 이름 등 **불가피한 고유명사**만 괄호에 영어를 병기할 수 있습니다.
+- 영어 문장을 그대로 복사해 제목·설명만 채우지 마세요.
 
 ## 이 카테고리 초점
 ${focus}
@@ -728,7 +826,7 @@ ${requirement}
 ${content}
 
 지침:
-- 아래 블록의 **카테고리별 점수**·**권장 개선사항**은 모두 aiseo-audit가 제시한 **공식 분석 결과**입니다. 권장 문구가 있으면 **각 권장을** 실행 가능한 개선안으로 풀어쓰세요(출처: \`aiseo-audit · …\`).
+- 아래 블록의 **카테고리별 점수**·**권장 개선사항**은 모두 aiseo-audit가 제시한 **공식 분석 결과**입니다. 권장 문구가 있으면 **각 권장을** 실행·검토 가능한 개선안으로 **한국어로** 풀어쓰세요(출처: \`aiseo-audit · …\`). 완벽한 해법이 아니어도 되며 **완화에 도움이 되는 구체적 단계**면 충분합니다.
 - 권장이 없고 점수만 있으면 **상대적으로 낮은 카테고리**부터 우선순위를 두고 개선안을 작성하세요.
 - **메타·구조화 데이터·인용·엔티티 명확성** 관련 조치는 AEO/GEO의 핵심이며 **global scope**로 두어도 됩니다. 다른 카테고리에서 쓰는 "본문만 우선" 규칙으로 이런 항목을 버리지 마세요.
 - Lighthouse/axe 감사를 이 카테고리에 끌어오지 마세요.
@@ -759,7 +857,7 @@ async function generateReportForCategory(
   const prompt =
     category === 'AEO/GEO'
       ? buildAeoGeoCategoryPrompt(focus, requirement, content, jsonRules)
-      : `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. 각 개선안은 **실행 가능한 조치**와 **데이터 근거**를 함께 제시할 것(일반론·근거 없는 조언 금지).
+      : `역할: 시니어 웹 품질·접근성 컨설턴트. 출력은 **한국어** 사용자를 위한 리포트용. **아래 감사·위반 블록에 나온 이슈**에 대해서는 완화·해결에 도움이 되는 **구체적 조치**를 제시하는 것이 목표입니다(완벽한 해법·100% 확신 불필요). **감사 목록에 없는 이슈는 만들지 말 것.**
 
 ## 이 카테고리 초점
 ${focus}
@@ -768,12 +866,12 @@ ${focus}
 ${requirement}
 요구사항에 명시된 관심 영역과 직접 맞닿은 항목에 matchesRequirement=true 를 우선 부여하고, **우선순위(priority)** 를 매길 때도 동일 영역이면 한 단계 유리하게 검토하세요.
 
-## 실제 분석 결과 (유일한 근거 — 아래에 없는 Lighthouse/axe 이슈는 만들지 말 것)
+## 실제 분석 결과 (근거 데이터 — 아래에 없는 이슈는 새로 만들지 말 것)
 ${content}
 
 지침:
-- 위 블록에 **나열된** 감사·위반만 개선안으로 옮기세요. 목록이 비어 있거나 "없음"이면 improvements는 [] 이거나, 데이터에 근거한 1건 이하만.
-- 항목 수는 품질 우선 (불필요한 중복·일반론 금지).
+- 위 블록에 **나열된** 감사·위반**만** 근거로 삼으세요(새 이슈·새 수치 금지). 블록에 개선이 필요한 항목이 있으면 **각각을 다루는 개선안을 적극 제시**하세요. 블록이 해당 카테고리에 맞게 **실질적으로 비어 있을 때만** improvements는 [].
+- 동일 원인 중복만 줄이고, **감사 ID·위반 근거 없는** 추상 일반론 한 줄은 금지.
 ${nonAeoPriorityGuideline}
 - 배경 설명·서론 없이 JSON만.
 
@@ -840,6 +938,17 @@ ${issues.join('\n')}
   return await callGemini(prompt)
 }
 
+/** 영문 권장문이 많을 때 설명을 한글 안내로 감싸기 위한 휴리스틱 */
+function aiseoRecLooksMostlyEnglish(text: string): boolean {
+  const letters = text.replace(/\s/g, '')
+  if (letters.length < 10) return false
+  let latin = 0
+  for (const ch of letters) {
+    if (/[A-Za-z]/.test(ch)) latin++
+  }
+  return latin / letters.length > 0.55
+}
+
 /**
  * Gemini가 빈 배열/파싱 실패로 AEO/GEO 개선안을 내지 못할 때, aiseo-audit 원본으로 최소한의 항목을 채움.
  * (권장 배열 → 우선; 없으면 낮은 카테고리 점수 기준)
@@ -859,7 +968,15 @@ function deriveAiseoImprovementsFallback(aiseo: any): any[] {
   }
 
   recTexts.slice(0, 12).forEach((text, i) => {
-    const title = text.length > 80 ? `${text.slice(0, 77).trimEnd()}…` : text
+    const englishHeavy = aiseoRecLooksMostlyEnglish(text)
+    const title = englishHeavy
+      ? `권장 개선 ${i + 1} (aiseo-audit)`
+      : text.length > 80
+        ? `${text.slice(0, 77).trimEnd()}…`
+        : text
+    const description = englishHeavy
+      ? `aiseo-audit가 제시한 권장입니다. 아래는 감사 도구의 원문이며, 페이지·메타에 반영할지 검토하세요.\n\n---\n${text}`
+      : text
     out.push({
       title,
       category: 'AEO/GEO',
@@ -867,7 +984,7 @@ function deriveAiseoImprovementsFallback(aiseo: any): any[] {
       impact: i === 0 ? '높음' : '중간',
       difficulty: '보통',
       scope: 'global',
-      description: text,
+      description,
       codeExample: '',
       source: `aiseo-audit · 권장 ${i + 1}`,
       matchesRequirement: false,
@@ -981,6 +1098,39 @@ export async function generateReport(
         const fallback = deriveAiseoImprovementsFallback(analysisResults.aiseo)
         if (fallback.length > 0) {
           categoryResults[aeoIdx] = fallback
+        }
+      }
+    }
+
+    const accIdx = REPORT_CATEGORIES.indexOf('접근성')
+    if (accIdx >= 0) {
+      const accList = categoryResults[accIdx]
+      if (!accList || accList.length === 0) {
+        const fallback = deriveAccessibilityImprovementsFromAudits(analysisResults)
+        if (fallback.length > 0) {
+          categoryResults[accIdx] = fallback
+        }
+      }
+    }
+
+    const perfIdx = REPORT_CATEGORIES.indexOf('성능')
+    if (perfIdx >= 0) {
+      const perfList = categoryResults[perfIdx]
+      if (!perfList || perfList.length === 0) {
+        const fallback = derivePerformanceImprovementsFromAudits(analysisResults)
+        if (fallback.length > 0) {
+          categoryResults[perfIdx] = fallback
+        }
+      }
+    }
+
+    const bpIdx = REPORT_CATEGORIES.indexOf('모범사례')
+    if (bpIdx >= 0) {
+      const bpList = categoryResults[bpIdx]
+      if (!bpList || bpList.length === 0) {
+        const fallback = deriveBestPracticesImprovementsFromAudits(analysisResults)
+        if (fallback.length > 0) {
+          categoryResults[bpIdx] = fallback
         }
       }
     }

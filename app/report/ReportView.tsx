@@ -397,9 +397,26 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   const tabEntries: { id: string; label: string; count?: number }[] = [
     { id: 'all', label: TAB_LABELS.all },
   ]
+  const accessibilityCardScore = reportData.dashboard?.cards?.find((c) => c.id === 'accessibility')?.score100
+  const accessibilityTabDespiteEmptyImprovements =
+    typeof accessibilityCardScore === 'number' &&
+    Number.isFinite(accessibilityCardScore) &&
+    accessibilityCardScore < 76
+
+  const performanceCardScore = reportData.dashboard?.cards?.find((c) => c.id === 'performance')?.score100
+  const performanceTabDespiteEmptyImprovements =
+    typeof performanceCardScore === 'number' &&
+    Number.isFinite(performanceCardScore) &&
+    performanceCardScore < 76
+
   CATEGORY_ORDER.forEach(cat => {
     const count = byCategory[cat] ?? 0
-    if (count > 0 || (cat === 'AEO/GEO' && reportData.aiseo)) {
+    if (
+      count > 0 ||
+      (cat === 'AEO/GEO' && reportData.aiseo) ||
+      (cat === '접근성' && accessibilityTabDespiteEmptyImprovements) ||
+      (cat === '성능' && performanceTabDespiteEmptyImprovements)
+    ) {
       tabEntries.push({ id: cat, label: TAB_LABELS[cat] ?? cat, count: count || undefined })
     }
   })
@@ -714,6 +731,10 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                   {reportData.aiseo.recommendations && reportData.aiseo.recommendations.length > 0 && (
                     <div className={styles.aiseoRecs}>
                       <h4>권장 개선사항 (상위)</h4>
+                      <p className={styles.aiseoRecsHint}>
+                        아래는 aiseo-audit가 반환한 원문이며 영어일 수 있습니다. 실행 가능한 한글 설명은 이 탭 아래
+                        「AEO/GEO 개선사항」카드를 우선 참고하세요.
+                      </p>
                       <ul>
                         {reportData.aiseo.recommendations.slice(0, 5).map((rec: string | { text?: string }, i: number) => (
                           <li key={i}>{typeof rec === 'string' ? rec : (rec?.text ?? (rec as any)?.message ?? String(rec))}</li>
@@ -737,7 +758,22 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                     <>
                       <h2>{TAB_LABELS[id] ?? id} 개선사항 ({items.length}건)</h2>
                       {items.length === 0 ? (
-                        <p className={styles.emptyTab}>이 항목에 해당하는 개선사항이 없습니다.</p>
+                        <p className={styles.emptyTab}>
+                          {id === '접근성' && accessibilityTabDespiteEmptyImprovements ? (
+                            <>
+                              상단 접근성 등급은 Lighthouse·axe 자동 감사 점수를 반영합니다. 이 탭에 표시할 AI 개선
+                              항목이 없습니다(구 저장 리포트이거나 당시 분석에서 접근성 JSON이 비었을 수 있음). Overview와
+                              감사 요약을 참고하거나, 같은 URL로 재분석하면 axe·Lighthouse 근거 항목이 채워집니다.
+                            </>
+                          ) : id === '성능' && performanceTabDespiteEmptyImprovements ? (
+                            <>
+                              상단 성능/로딩 등급은 Lighthouse 성능 카테고리 점수를 반영합니다. 이 탭에 표시할 개선
+                              항목이 없습니다(구 저장 리포트 등). 같은 URL로 재분석하면 실패 감사 기반 항목이 채워집니다.
+                            </>
+                          ) : (
+                            '이 항목에 해당하는 개선사항이 없습니다.'
+                          )}
+                        </p>
                       ) : (
                         items.map((improvement, index) => (
                     <div key={index} className={styles.improvementCard}>

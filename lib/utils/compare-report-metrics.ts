@@ -36,11 +36,32 @@ export function computeCompareSideMetrics(
   }
 
   // 필터링 모드에서는 summary 숫자와 불일치할 수 있어 improvements 기반으로 계산한다.
-  const highPriority = improvements.filter((i) => i.priority === 'high').length
+  let highPriority = improvements.filter((i) => i.priority === 'high').length
 
   const matchesRequirementCount = improvements.filter((i) => i.matchesRequirement).length
 
-  const totalIssues = improvements.length
+  let totalIssues = improvements.length
+
+  /**
+   * 구 저장 리포트: 접근성 개선안 배열은 비었는데 대시보드만 F/D인 경우(과거 AI 미출력).
+   * 비교 표·총 이슈 수가 등급과 어긋나지 않게 최소 건수만 보정합니다.
+   */
+  const accLegacy = accessibilityLegacyFloorFromDashboard(data)
+  const acc = byCategory['접근성'] ?? { count: 0, highCount: 0 }
+  if (accLegacy && acc.count === 0) {
+    byCategory['접근성'] = { count: accLegacy.count, highCount: accLegacy.highCount }
+    totalIssues += accLegacy.count
+    highPriority += accLegacy.highCount
+  }
+
+  /** 구 저장: 성능 개선안 0건인데 대시보드 성능 카드만 낮은 경우 (`모범사례`는 별도 카드 없음 → 미보정) */
+  const perfLegacy = performanceLegacyFloorFromDashboard(data)
+  const perf = byCategory['성능'] ?? { count: 0, highCount: 0 }
+  if (perfLegacy && perf.count === 0) {
+    byCategory['성능'] = { count: perfLegacy.count, highCount: perfLegacy.highCount }
+    totalIssues += perfLegacy.count
+    highPriority += perfLegacy.highCount
+  }
 
   const raw = data.aiseo?.overallScore
   const aiseoOverall =
@@ -53,6 +74,26 @@ export function computeCompareSideMetrics(
     byCategory,
     aiseoOverall,
   }
+}
+
+function accessibilityLegacyFloorFromDashboard(data: ReportData): { count: number; highCount: number } | null {
+  const card = data.dashboard?.cards?.find((c) => c.id === 'accessibility')
+  const s = card?.score100
+  if (typeof s !== 'number' || !Number.isFinite(s)) return null
+  if (s >= 76) return null
+  const count = s < 55 ? 3 : s < 65 ? 2 : 1
+  const highCount = s < 60 ? 1 : 0
+  return { count, highCount }
+}
+
+function performanceLegacyFloorFromDashboard(data: ReportData): { count: number; highCount: number } | null {
+  const card = data.dashboard?.cards?.find((c) => c.id === 'performance')
+  const s = card?.score100
+  if (typeof s !== 'number' || !Number.isFinite(s)) return null
+  if (s >= 76) return null
+  const count = s < 55 ? 3 : s < 65 ? 2 : 1
+  const highCount = s < 60 ? 1 : 0
+  return { count, highCount }
 }
 
 export type CompareWinner = 'a' | 'b' | 'tie'

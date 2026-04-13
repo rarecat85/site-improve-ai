@@ -46,7 +46,7 @@
 | 높은 우선순위 | 동일 | `priority === 'high'` 개수 등 `summary.highPriority` |
 | 예상 효과 문구 | 동일 | `summary.estimatedImpact` 등 고정 문구에 가까운 요약 필드 |
 
-개선 항목 본문은 **Lighthouse / axe / aiseo-audit** 결과를 프롬프트에 넣고 **OpenAI·Anthropic·Gemini**가 카테고리별로 생성합니다. 공통 맥락(`metaLines`)에는 **페이지 통계·CrUX·HTTP 응답 메타(보안 헤더 등)**도 포함되며, SEO 전용으로는 **DOM에서 뽑은 JSON-LD(`@type`) 요약**이 추가됩니다(아래 §7·[REPORT_CATEGORY_TABS.md](./REPORT_CATEGORY_TABS.md)).
+개선 항목 본문은 **Lighthouse / axe / aiseo-audit** 결과를 프롬프트에 넣고 **OpenAI·Anthropic·Gemini**가 카테고리별로 생성합니다. **AEO/GEO**는 Gemini 전담이며, 프롬프트에서 **사용자 대면 필드 한국어**를 요구하고, 패키지 **권장 목록(상단)** 과 **개선 카드(하단)** 의 역할을 나눕니다(상세는 [REPORT_CATEGORY_TABS.md](./REPORT_CATEGORY_TABS.md) **§5.2**). 공통 맥락(`metaLines`)에는 **페이지 통계·CrUX·HTTP 응답 메타(보안 헤더 등)**도 포함되며, SEO 전용으로는 **DOM에서 뽑은 JSON-LD(`@type`) 요약**이 추가됩니다(아래 §7·동 문서).
 
 ### 3.1 로컬호스트(개발/스테이징) URL 정책
 

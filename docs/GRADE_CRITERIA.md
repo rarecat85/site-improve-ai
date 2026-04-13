@@ -2,6 +2,8 @@
 
 리포트 화면에 표시되는 **항목별 등급·상태**는 AI 추론이 아니라, `lib/utils/grade-calculator.ts`의 `computeDashboardGrades`에서 **규칙 기반**으로 계산합니다. Lighthouse·axe·HTTP 메타·aiseo-audit 결과를 0~100점으로 만든 뒤, 아래 표에 따라 **문자 등급(A+ ~ F)** 과 **한 줄 상태**를 붙입니다.
 
+**등급 카드 vs 개선 항목 탭:** 대시보드 등급은 위 규칙만 따릅니다. **이미지 최적화·스크립트 리소스**는 **등급 카드만** 있고 **전용 탭은 없으며**, 관련 실행 제안은 AI가 **성능·모범사례·UX/UI** 등으로 묶어 내보내면 해당 탭에 표시됩니다. **접근성·성능·모범사례** 탭 목록은 `improvements`가 원천이나, 전담 AI가 비었을 때는 **axe / Lighthouse 감사 규칙 폴백**으로 목록을 채울 수 있습니다(구현·탭 보정은 [`REPORT_CATEGORY_TABS.md`](./REPORT_CATEGORY_TABS.md) 참고).
+
 ---
 
 ## 1. 점수(0~100) → 등급(Grade)

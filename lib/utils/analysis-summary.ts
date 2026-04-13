@@ -187,5 +187,9 @@ export function formatAiseoSummaryForPrompt(aiseoResult: any): string {
     })
     lines.push('권장 개선사항:\n' + recs.join('\n'))
   }
-  return 'AEO/GEO (aiseo-audit · AI 검색·인용 준비도):\n' + lines.join('\n\n')
+  return (
+    'AEO/GEO (aiseo-audit · AI 검색·인용 준비도):\n' +
+    lines.join('\n\n') +
+    '\n\n[모델 지시] 위 블록에 영어 문장이 있을 수 있습니다. 최종 JSON의 title·description 등 **사용자에게 보이는 문장은 모두 한국어**로 작성하고, 영어 권장은 **한국어로 번역·요약**하세요.'
+  )
 }
