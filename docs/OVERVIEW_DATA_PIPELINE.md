@@ -102,7 +102,7 @@
 
 | 구성요소 | 도구 | 하는 일 |
 |----------|------|---------|
-| **rows** (와이어프레임 칸) | **Cheerio** (`extractPageArchitecture`) | 안정화된 HTML에서 상위 블록을 잘라 레이블·셀 ID 부여. 쿠키 배너·푸터 등은 휴리스틱으로 제외 |
+| **rows** (와이어프레임 칸) | **Cheerio** (`extractPageArchitecture`) | 안정화된 HTML에서 상위 블록을 잘라 레이블·셀 ID 부여. 1차 후보가 하나뿐이면 단일 자식 래퍼를 깊이 제한 내에서 연속 언랩(상세는 [PAGE_ARCHITECTURE_WIREFRAME.md](./PAGE_ARCHITECTURE_WIREFRAME.md)). 쿠키 배너·푸터 등은 휴리스틱으로 제외 |
 | **sections** (섹션 요약 카드) | **Claude** (`summarizePageArchitectureSections`) | 각 블록 발췌를 보고 제목·지표·설명 생성. 의미 없는 크롬만 있으면 빈 배열 가능(폴백 로직 있음) |
 
 HTML 소스는 가능하면 **`domForArchitecture`**(네트워크 유휴 후 2차 스냅샷), 없으면 **1차 `dom`**을 사용합니다.

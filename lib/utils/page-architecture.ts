@@ -37,6 +37,8 @@ export interface PageArchitectureReport {
 }
 
 const MAX_TOP_BLOCKS = 10
+/** main/body 직계가 단일 래퍼일 때, 직계 자식이 하나뿐이면 아래로 계속 내려가며 펼침 (AEM·그리드 껍데기 대응) */
+const MAX_SINGLE_WRAPPER_UNWRAP_DEPTH = 14
 /** 단일 상위 블록을 펼칠 때 직계 자식 칸 최대 개수 */
 const MAX_CHILDREN_EXPAND = 5
 /** 와이어프레임·셀 총 상한(UI 밀도) */
@@ -238,11 +240,56 @@ function slugLabel(text: string, maxLen: number): string {
     .slice(0, 26)
 }
 
+/** 단일 자식 체인(래퍼)만 있을 때 아래로 내려가며 펼침. 직계에 2개 이상이면 와이어프레임 후보로 정착 */
+function unwrapSingleChildWrapperChain($: cheerio.CheerioAPI, initialCandidates: Element[]): Element[] {
+  let candidates = initialCandidates
+  let depth = 0
+  while (candidates.length === 1 && depth < MAX_SINGLE_WRAPPER_UNWRAP_DEPTH) {
+    const only = candidates[0]!
+    const tag = only.tagName?.toLowerCase() || ''
+    if (!isStructuralWrapperElement(tag)) break
+
+    const directKids = $(only)
+      .children()
+      .toArray()
+      .filter((el) => {
+        const t = el.tagName?.toLowerCase()
+        return Boolean(t && t !== 'script' && t !== 'style')
+      })
+
+    if (directKids.length === 0) break
+
+    if (directKids.length === 1) {
+      candidates = [directKids[0]!]
+      depth += 1
+      continue
+    }
+
+    const wf = directKids.filter((el) => isWireframeBlockCandidate($, el))
+    if (wf.length >= 2) {
+      return wf
+    }
+    if (wf.length === 1) {
+      candidates = [wf[0]!]
+      depth += 1
+      continue
+    }
+
+    break
+  }
+  return candidates
+}
+
+function isStructuralWrapperElement(tag: string): boolean {
+  return tag === 'div' || tag === 'section' || tag === 'article' || tag === 'aside'
+}
+
 /**
  * Puppeteer HTML에서 상위 블록 구조를 추출합니다.
  * 와이어프레임 칸과 sections 스니펫은 동일 후보(느슨한 기준)로 1:1 대응합니다.
  * 쿠키/CMP 루트 제거·사이드 드로어 네비 껍데기 제외만 유지합니다.
  * 공지·토스트·티커·숨김/빈 래퍼 등은 **상단에서 연속으로만** 건너뜁니다(내부 탭 띠는 유지, 전부 걸리면 원본 유지).
+ * 직계 후보가 **하나뿐**이면 div/section 등 래퍼를 **직계 자식이 둘 이상 나올 때까지** (상한 깊이 내) 따라 내려가 펼칩니다.
  * 첫 번째 상위 후보는 **자식 펼침·그리드 분할 없이** 한 칸(OVERVIEW 등).
  * 두 번째 이후 후보만 직계 div 그리드(2~4) 또는 한 단계 직계 자식 펼침을 적용합니다.
  */
@@ -271,23 +318,8 @@ export function extractPageArchitecture(html: string): ExtractedPageArchitecture
 
   let candidates = rawChildren.filter((el) => isWireframeBlockCandidate($, el))
 
-  // body/main 직계가 래퍼 div 하나뿐이면 한 단계 펼쳐 본문 섹션을 잡음
   if (candidates.length === 1) {
-    const only = candidates[0]!
-    const tag = only.tagName?.toLowerCase() || ''
-    if (tag === 'div') {
-      const inner = $(only)
-        .children()
-        .toArray()
-        .filter((el) => {
-          const t = el.tagName?.toLowerCase()
-          if (!t || t === 'script' || t === 'style') return false
-          return isWireframeBlockCandidate($, el)
-        })
-      if (inner.length >= 2) {
-        candidates = inner
-      }
-    }
+    candidates = unwrapSingleChildWrapperChain($, candidates)
   }
 
   candidates = dropLeadingLowValueNoise($, candidates)
