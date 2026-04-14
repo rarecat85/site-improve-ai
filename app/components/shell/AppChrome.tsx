@@ -11,6 +11,7 @@ import {
 } from '@/lib/constants/report-session'
 import {
   deleteCompareSnapshotById,
+  deleteReportSnapshotById,
   listCompareSnapshotMetaFromIdb,
   loadCompareSessionFromIdbBySnapshotId,
   listReportSnapshotMetaFromIdb,
@@ -303,6 +304,19 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
     [refreshCompareSnapshots]
   )
 
+  const deleteReportSnapshot = useCallback(
+    async (id: string) => {
+      setRestoreError(null)
+      try {
+        await deleteReportSnapshotById(id)
+        await refreshSnapshots()
+      } catch {
+        setRestoreError('삭제하지 못했습니다.')
+      }
+    },
+    [refreshSnapshots]
+  )
+
   return (
     <div className={styles.chromeRoot}>
       {showNavChrome ? (
@@ -392,20 +406,38 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
                   <ul className={styles.savedList}>
                     {snapshots.map((item) => (
                       <li key={item.id}>
-                        <button
-                          type="button"
-                          className={styles.savedItem}
-                          disabled={snapshotRestoreBusy}
-                          onClick={() => void onPickSnapshot(item.id)}
-                        >
-                          <span className={styles.savedItemUrl}>{item.url || '(URL 없음)'}</span>
-                          <span className={styles.savedItemMeta}>
-                            {formatSavedAt(item.savedAt)}
-                            {item.requirement
-                              ? ` · ${item.requirement.slice(0, 42)}${item.requirement.length > 42 ? '…' : ''}`
-                              : ''}
-                          </span>
-                        </button>
+                        <div className={styles.savedListItemRow}>
+                          <button
+                            type="button"
+                            className={styles.savedItem}
+                            disabled={snapshotRestoreBusy}
+                            onClick={() => void onPickSnapshot(item.id)}
+                          >
+                            <span className={styles.savedItemUrl}>{item.url || '(URL 없음)'}</span>
+                            <span className={styles.savedItemMeta}>
+                              {formatSavedAt(item.savedAt)}
+                              {item.requirement
+                                ? ` · ${item.requirement.slice(0, 42)}${item.requirement.length > 42 ? '…' : ''}`
+                                : ''}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.closeButton}
+                            aria-label="저장된 분석 삭제"
+                            disabled={snapshotRestoreBusy}
+                            onClick={() => void deleteReportSnapshot(item.id)}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                              <path
+                                d="M6 6l12 12M18 6L6 18"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -426,7 +458,7 @@ function AppChromeInner({ children }: { children: React.ReactNode }) {
                   <ul className={styles.savedList}>
                     {compareSnapshots.map((item) => (
                       <li key={item.id}>
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'stretch' }}>
+                        <div className={styles.savedListItemRow}>
                           <button
                             type="button"
                             className={styles.savedItem}

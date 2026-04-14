@@ -9,6 +9,7 @@ import {
 } from '@/lib/utils/analysis-summary'
 import { improvementMatchesUserFocus } from '@/lib/utils/analysis-priorities'
 import { computeDashboardGrades, formatResponseMetaForPrompt } from '@/lib/utils/grade-calculator'
+import { assignInsightTiers, countInsightTiers } from '@/lib/utils/improvement-insight-tier'
 import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
 import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
@@ -26,6 +27,7 @@ import type {
   WireframeRow,
 } from '@/lib/utils/page-architecture'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
+import type { ReportData } from '@/lib/types/report-data'
 import { MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
 import { LLM_CONFIG } from '@/lib/config/llm'
 
@@ -1222,7 +1224,7 @@ export async function generateReport(
       }
     }
 
-    const allImprovements: any[] = []
+    let allImprovements: any[] = []
     for (let i = 0; i < REPORT_CATEGORIES.length; i++) {
       const list = categoryResults[i] || []
       const cat = REPORT_CATEGORIES[i]
@@ -1240,7 +1242,7 @@ export async function generateReport(
       byCategory[c] = (byCategory[c] ?? 0) + 1
     })
 
-    const summary = {
+    const summary: ReportData['summary'] = {
       totalIssues: allImprovements.length,
       highPriority: allImprovements.filter((i) => i.priority === 'high').length,
       byCategory,
@@ -1272,6 +1274,25 @@ export async function generateReport(
     // 모바일 대응(규칙 기반) — 별도 탭을 만들지 않고 기존 카테고리(주로 UX/UI)에 포함
     allImprovements.push(...deriveMobileImprovements(analysisResults))
 
+    const formFactor =
+      (process.env.ANALYSIS_FORM_FACTOR || 'desktop').toLowerCase() === 'mobile' ? 'mobile' : 'desktop'
+    const { cards: dashboardCards, overallScore100 } = computeDashboardGrades({
+      lighthouse: analysisResults.lighthouse,
+      axe: analysisResults.axe,
+      aiseo: analysisResults.aiseo,
+      securityAudit: securityAudit ? { score100: securityAudit.score100 } : null,
+      qualityAudit: qualityAudit
+        ? { semanticScore: qualityAudit.semanticScore, efficiencyScore: qualityAudit.efficiencyScore }
+        : null,
+      pageStats: analysisResults.pageStats,
+      responseMeta: analysisResults.responseMeta,
+      priorities: priorities?.length ? priorities.slice(0, 3) : null,
+      crux: analysisResults.crux ?? null,
+      cruxKeyConfigured: Boolean(process.env.GOOGLE_CRUX_API_KEY?.trim()),
+      analysisFormFactor: formFactor,
+    })
+    allImprovements = assignInsightTiers(allImprovements, analysisResults, dashboardCards)
+
     // derived UX/UI·보안·모바일 포함 후 정렬: (선택 시) 관심 영역 → 요구사항 부합 → high/medium/low
     const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
     allImprovements.sort((a, b) => {
@@ -1299,6 +1320,9 @@ export async function generateReport(
         summary.priorityCriteria
     }
 
+    const tierCounts = countInsightTiers(allImprovements)
+    summary.insightTier = { primary: tierCounts.primary, supplementary: tierCounts.supplementary }
+
     const parsed: any = { improvements: allImprovements, summary }
     if (priorities?.length) parsed.priorities = priorities.slice(0, 3)
 
@@ -1319,24 +1343,7 @@ export async function generateReport(
       }
     }
 
-    const formFactor =
-      (process.env.ANALYSIS_FORM_FACTOR || 'desktop').toLowerCase() === 'mobile' ? 'mobile' : 'desktop'
-    const { cards, overallScore100 } = computeDashboardGrades({
-      lighthouse: analysisResults.lighthouse,
-      axe: analysisResults.axe,
-      aiseo: analysisResults.aiseo,
-      securityAudit: securityAudit ? { score100: securityAudit.score100 } : null,
-      qualityAudit: qualityAudit
-        ? { semanticScore: qualityAudit.semanticScore, efficiencyScore: qualityAudit.efficiencyScore }
-        : null,
-      pageStats: analysisResults.pageStats,
-      responseMeta: analysisResults.responseMeta,
-      priorities: priorities?.length ? priorities.slice(0, 3) : null,
-      crux: analysisResults.crux ?? null,
-      cruxKeyConfigured: Boolean(process.env.GOOGLE_CRUX_API_KEY?.trim()),
-      analysisFormFactor: formFactor,
-    })
-    parsed.dashboard = { cards, overallScore100 }
+    parsed.dashboard = { cards: dashboardCards, overallScore100 }
     if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats
     if (analysisResults.crux != null) parsed.crux = analysisResults.crux
     if (analysisResults.responseMeta) parsed.responseMeta = analysisResults.responseMeta

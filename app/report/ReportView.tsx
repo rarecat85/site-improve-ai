@@ -59,6 +59,58 @@ type ReportViewProps = {
   initialPreview?: boolean
 }
 
+function ImprovementCardsList({ items }: { items: Improvement[] }) {
+  return (
+    <>
+      {items.map((improvement, index) => (
+        <div key={`${improvement.title}-${index}`} className={styles.improvementCard}>
+          <div className={styles.improvementHeader}>
+            <h4>{improvement.title}</h4>
+            <div className={styles.badges}>
+              {improvement.matchesRequirement && (
+                <span className={`${styles.badge} ${styles.matchesRequirement}`} title="입력한 요구사항과 직접 관련된 추천 항목">
+                  요구사항 부합
+                </span>
+              )}
+              {improvement.source && (
+                <span className={`${styles.badge} ${styles.source}`}>{improvement.source}</span>
+              )}
+              <span
+                className={`${styles.badge} ${
+                  improvement.priority === 'high'
+                    ? styles.high
+                    : improvement.priority === 'low'
+                      ? styles.low
+                      : styles.medium
+                }`}
+              >
+                {improvement.priority === 'high' ? '높음' : improvement.priority === 'low' ? '낮음' : '중간'}
+              </span>
+              <span className={styles.badge}>영향도: {improvement.impact}</span>
+              <span className={styles.badge}>난이도: {improvement.difficulty}</span>
+            </div>
+          </div>
+          {improvement.requirementRelevance && (
+            <p className={styles.relevance}>요구사항·관련성: {improvement.requirementRelevance}</p>
+          )}
+          {improvement.priorityReason && (
+            <p className={styles.priorityReason}>우선순위 이유: {improvement.priorityReason}</p>
+          )}
+          <p className={styles.description}>{improvement.description}</p>
+          {improvement.codeExample && (
+            <div className={styles.codeExample}>
+              <h4>코드 예시</h4>
+              <pre>
+                <code>{improvement.codeExample}</code>
+              </pre>
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  )
+}
+
 function readReportOpenMeta(): ReportOpenMeta {
   if (typeof window === 'undefined') return { source: 'analyze' }
   try {
@@ -165,6 +217,8 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'error'>('idle')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [infoModalMessage, setInfoModalMessage] = useState<string | null>(null)
+
+  const useInsightTierUi = Boolean(reportData?.summary?.insightTier)
 
   useEffect(() => {
     const hide = !loadReady || reportData == null
@@ -533,11 +587,30 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
           <h3>높은 우선순위</h3>
           <p className={styles.summaryNumber}>{reportData.summary.highPriority}</p>
         </div>
+        {reportData.summary.insightTier ? (
+          <>
+            <div className={styles.summaryCard}>
+              <h3>핵심 개선 (등급·점검 연동)</h3>
+              <p className={styles.summaryNumber}>{reportData.summary.insightTier.primary}</p>
+            </div>
+            <div className={styles.summaryCard}>
+              <h3>추가 권장·최적화</h3>
+              <p className={styles.summaryNumber}>{reportData.summary.insightTier.supplementary}</p>
+            </div>
+          </>
+        ) : null}
         <div className={styles.summaryCard}>
           <h3>예상 효과</h3>
           <p className={styles.summaryText}>{reportData.summary.estimatedImpact}</p>
         </div>
       </section>
+      {reportData.summary.insightTier ? (
+        <p className={styles.insightTierOverviewNote}>
+          「핵심 개선」은 대시보드 등급·Lighthouse·axe 등 자동 점검과 직접 맞닿은 항목이고, 「추가 권장」은 같은
+          분석에서 나온 여지·최적화입니다. 전체 건수는 변하지 않으며, 등급이 높을 때는 추가 권장 비중이 늘 수
+          있습니다.
+        </p>
+      ) : null}
 
       {reportData.contentSummary && (
         <section className={styles.sectionBlock} aria-label="사이트 목적 분석">
@@ -760,9 +833,13 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
               <section className={styles.improvements}>
                 {(() => {
                   const items = getItemsForTab(id)
+                  const primaryItems = items.filter((i) => i.insightTier !== 'supplementary')
+                  const supplementaryItems = items.filter((i) => i.insightTier === 'supplementary')
                   return (
                     <>
-                      <h2>{TAB_LABELS[id] ?? id} 개선사항 ({items.length}건)</h2>
+                      <h2>
+                        {TAB_LABELS[id] ?? id} 개선사항 ({items.length}건)
+                      </h2>
                       {items.length === 0 ? (
                         <p className={styles.emptyTab}>
                           {id === '접근성' && accessibilityTabDespiteEmptyImprovements ? (
@@ -780,50 +857,32 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                             '이 항목에 해당하는 개선사항이 없습니다.'
                           )}
                         </p>
+                      ) : useInsightTierUi ? (
+                        <>
+                          <p className={styles.insightTierTabLead}>
+                            아래는 동일 분석 결과이며, 상단 등급과 직접 연동된 항목과 추가 권장을 나누어 표시합니다.
+                          </p>
+                          {primaryItems.length > 0 && (
+                            <div className={styles.insightTierBlock}>
+                              <h3 className={styles.insightTierHeading}>핵심 개선 (등급·자동 점검과 연동)</h3>
+                              <p className={styles.insightTierSubtext}>
+                                Lighthouse 실패·axe 심각 위반·높은 우선순위 등, 카드 점수에 더 직접 맞닿은 과제입니다.
+                              </p>
+                              <ImprovementCardsList items={primaryItems} />
+                            </div>
+                          )}
+                          {supplementaryItems.length > 0 && (
+                            <div className={styles.insightTierBlock}>
+                              <h3 className={styles.insightTierHeading}>추가 권장·최적화</h3>
+                              <p className={styles.insightTierSubtext}>
+                                부분 통과·경미한 이슈·여지 위주로, 등급이 이미 높아도 남을 수 있는 항목입니다.
+                              </p>
+                              <ImprovementCardsList items={supplementaryItems} />
+                            </div>
+                          )}
+                        </>
                       ) : (
-                        items.map((improvement, index) => (
-                    <div key={index} className={styles.improvementCard}>
-                      <div className={styles.improvementHeader}>
-                        <h4>{improvement.title}</h4>
-                        <div className={styles.badges}>
-                          {improvement.matchesRequirement && (
-                            <span className={`${styles.badge} ${styles.matchesRequirement}`} title="입력한 요구사항과 직접 관련된 추천 항목">
-                              요구사항 부합
-                            </span>
-                          )}
-                          {improvement.source && (
-                            <span className={`${styles.badge} ${styles.source}`}>{improvement.source}</span>
-                          )}
-                          <span
-                            className={`${styles.badge} ${
-                              improvement.priority === 'high'
-                                ? styles.high
-                                : improvement.priority === 'low'
-                                  ? styles.low
-                                  : styles.medium
-                            }`}
-                          >
-                            {improvement.priority === 'high' ? '높음' : improvement.priority === 'medium' ? '중간' : '낮음'}
-                          </span>
-                          <span className={styles.badge}>영향도: {improvement.impact}</span>
-                          <span className={styles.badge}>난이도: {improvement.difficulty}</span>
-                        </div>
-                      </div>
-                      {improvement.requirementRelevance && (
-                        <p className={styles.relevance}>요구사항·관련성: {improvement.requirementRelevance}</p>
-                      )}
-                      {improvement.priorityReason && (
-                        <p className={styles.priorityReason}>우선순위 이유: {improvement.priorityReason}</p>
-                      )}
-                      <p className={styles.description}>{improvement.description}</p>
-                      {improvement.codeExample && (
-                        <div className={styles.codeExample}>
-                          <h4>코드 예시</h4>
-                          <pre><code>{improvement.codeExample}</code></pre>
-                        </div>
-                      )}
-                    </div>
-                        ))
+                        <ImprovementCardsList items={items} />
                       )}
                     </>
                   )

@@ -129,17 +129,29 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 
 ---
 
-## 5. 데이터 없음·대체 문구
+## 5. 개선 항목: 핵심 vs 추가 권장
+
+리포트의 `improvements[]`는 **건수를 줄이지 않고**, 각 항목에 `insightTier`( `primary` | `supplementary` )를 붙여 표시만 나눕니다.
+
+- **`primary`**: Lighthouse **실패(감사 score 0)**·axe **critical/serious**·`priority: high` 등, 대시보드 카드 점수와 더 직접 맞닿은 과제로 분류합니다.
+- **`supplementary`**: 부분 통과·경미한 이슈·카테고리 점수가 이미 높을 때(예: 77점 이상)의 medium/low 등, **추가 최적화** 성격으로 분류합니다.
+
+규칙은 `lib/utils/improvement-insight-tier.ts`이며, 분석 파이프라인에서 `computeDashboardGrades`로 얻은 카드 점수와 `analysisResults`의 Lighthouse·axe를 함께 봅니다.
+
+---
+
+## 6. 데이터 없음·대체 문구
 
 특정 항목의 점수를 계산할 수 없으면 등급은 **`—`**, 상태는 카드마다 예: **Lighthouse 미실행**, **데이터 없음**, **PWA 감사 없음** 등으로 표시됩니다. 구현은 `computeDashboardGrades` 내부의 `card()` 헬퍼를 참고하세요.
 
 ---
 
-## 6. 구현 위치
+## 7. 구현 위치
 
 - 계산 로직: `lib/utils/grade-calculator.ts` (`computeDashboardGrades`, `scoreToGradeAndStatus`, `weightedOverallScore100`, `DASHBOARD_OVERALL_WEIGHTS`, `resolveDashboardWeightsForPriorities` 등)
 - 개선안 정렬(관심 영역): `lib/utils/analysis-priorities.ts`의 `improvementMatchesUserFocus` — `generateReport`에서 관심 영역이 있으면 **해당 카테고리 항목을** `matchesRequirement`·우선순위 정렬보다 앞에 둡니다.
 - 비교 화면 복합 점수: `lib/utils/compare-report-metrics.ts` (`weightedDashboardCardsScore`, `dashboardBlendScore100ForCompare` 등) — 저장된 `report.priorities`로 **동일 가중**을 재현하고, 로컬호스트 비교 시 보안 카드는 제외합니다.
-- 리포트에 합쳐지는 시점: `lib/services/ai.ts`의 `generateReport(requirement, analysisResults, url, priorities?)`에서 `computeDashboardGrades` 호출
+- 리포트에 합쳐지는 시점: `lib/services/ai.ts`의 `generateReport(requirement, analysisResults, url, priorities?)`에서 `computeDashboardGrades` 호출 후 `assignInsightTiers`로 `insightTier` 부여
+- 개선 항목 tier: `lib/utils/improvement-insight-tier.ts` (`assignInsightTiers`, `computeInsightTier`)
 
 문서와 코드가 어긋나면 **코드가 우선**입니다.

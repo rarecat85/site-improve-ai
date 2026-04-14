@@ -33,8 +33,9 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
     },
   ],
   summary: {
-    totalIssues: 12,
-    highPriority: 4,
+    totalIssues: 15,
+    highPriority: 5,
+    insightTier: { primary: 10, supplementary: 5 },
     estimatedImpact: '요구사항 반영 항목 우선 개선 시 전환율·접근성 개선 기대',
     byCategory: { SEO: 3, 접근성: 2, 'UX/UI': 3, 성능: 2, 모범사례: 1, Security: 2, 'AEO/GEO': 2 },
     priorityCriteria: '요구사항에 맞는 항목을 우선 추천하고, 그 외 기본 분석 항목도 모두 포함했습니다.',
@@ -104,6 +105,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       matchesRequirement: true,
       requirementRelevance: 'SEO 요구사항과 직접 일치',
       priorityReason: '검색 노출 개선에 직결',
+      insightTier: 'primary',
     },
     {
       title: '제목 태그 키워드 포함',
@@ -116,6 +118,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       matchesRequirement: true,
       requirementRelevance: 'SEO 요구사항과 직접 일치',
       priorityReason: '클릭률 개선 기대',
+      insightTier: 'primary',
     },
     {
       title: '이미지 alt 속성 추가',
@@ -127,6 +130,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'Lighthouse · SEO',
       requirementRelevance: '요구사항에는 미포함, 기본 품질 개선',
       priorityReason: '접근성·이미지 검색 대응',
+      insightTier: 'supplementary',
     },
     {
       title: '버튼 포커스 표시 개선',
@@ -140,6 +144,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       matchesRequirement: true,
       requirementRelevance: '접근성 요구사항과 직접 일치',
       priorityReason: '키보드 사용자 필수',
+      insightTier: 'primary',
     },
     {
       title: '랜드마크 역할 보강',
@@ -151,6 +156,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'axe-core · region',
       requirementRelevance: '요구사항에는 미포함',
       priorityReason: '스크린리더 사용성 개선',
+      insightTier: 'supplementary',
     },
     {
       title: 'CSP(Content-Security-Policy) 도입',
@@ -164,6 +170,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'security-audit · csp-missing',
       requirementRelevance: '요구사항과 직접 연결되진 않지만 기본 보안 품질을 높입니다.',
       priorityReason: 'security-audit: medium',
+      insightTier: 'primary',
     },
     {
       title: 'Referrer-Policy/Permissions-Policy 설정 점검',
@@ -177,6 +184,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'security-audit · referrer-policy-missing',
       requirementRelevance: '요구사항과 직접 연결되진 않지만 기본 보안 품질을 높입니다.',
       priorityReason: 'security-audit: low',
+      insightTier: 'supplementary',
     },
     {
       title: 'LCP 개선을 위한 이미지 지연 로딩',
@@ -190,6 +198,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       matchesRequirement: true,
       requirementRelevance: '성능 요구사항과 직접 일치',
       priorityReason: '체감 로딩 속도 개선',
+      insightTier: 'primary',
     },
     {
       title: '미사용 CSS 제거',
@@ -201,6 +210,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'Lighthouse · 성능',
       requirementRelevance: '요구사항에는 미포함',
       priorityReason: 'FCP 개선',
+      insightTier: 'supplementary',
     },
     {
       title: 'CTA 버튼 색 대비 비율',
@@ -212,6 +222,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'Lighthouse · 접근성',
       requirementRelevance: '기본 품질 개선',
       priorityReason: '가독성·접근성',
+      insightTier: 'primary',
     },
     {
       title: '폼 라벨 연결',
@@ -223,6 +234,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'axe-core · label',
       requirementRelevance: '기본 품질 개선',
       priorityReason: '폼 접근성',
+      insightTier: 'supplementary',
     },
     {
       title: '모바일 터치 타겟 크기/간격 개선',
@@ -237,6 +249,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'mobile-audit · tap-targets',
       requirementRelevance: '모바일 사용성 개선',
       priorityReason: '규칙 기반 모바일 점검 신호',
+      insightTier: 'primary',
     },
     {
       title: '보안 헤더 적용',
@@ -248,6 +261,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'Lighthouse · 모범 사례',
       requirementRelevance: '보안 요구사항과 관련',
       priorityReason: '보안 강화',
+      insightTier: 'primary',
     },
     {
       title: '구조화 데이터 적용',
@@ -259,6 +273,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'aiseo-audit · 구조화',
       requirementRelevance: 'AI 검색 대응',
       priorityReason: 'GEO 대응',
+      insightTier: 'primary',
     },
     {
       title: '핵심 문장 명확화',
@@ -270,6 +285,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       source: 'aiseo-audit · 인용',
       requirementRelevance: '기본 품질 개선',
       priorityReason: '인용 품질',
+      insightTier: 'primary',
     },
   ],
   screenshot:

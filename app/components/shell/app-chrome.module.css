@@ -272,6 +272,18 @@
   gap: 0.35rem;
 }
 
+.savedListItemRow {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.savedListItemRow .savedItem {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .savedItem {
   width: 100%;
   text-align: left;

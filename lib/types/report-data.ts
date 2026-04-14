@@ -24,6 +24,11 @@ export interface ReportImprovement {
   requirementRelevance?: string
   priorityReason?: string
   matchesRequirement?: boolean
+  /**
+   * 등급·자동 점검과 직접 연동된 개선 vs 추가 권장(최적화).
+   * 구 저장 리포트에는 없을 수 있음(undefined면 UI에서 primary로 취급).
+   */
+  insightTier?: 'primary' | 'supplementary'
 }
 
 export interface ReportData {
@@ -35,6 +40,8 @@ export interface ReportData {
     byCategory?: Record<string, number>
     priorityCriteria?: string
     requirementAlignment?: string
+    /** `primary` = 등급·감사 근거와 직접 연동, `supplementary` = 추가 권장(합이 totalIssues와 일치) */
+    insightTier?: { primary: number; supplementary: number }
   }
   /**
    * 마크업 시멘틱/DOM 규모/리소스 효율성 등 “렌더 결과” 기준의 규칙 기반 점검 요약.
