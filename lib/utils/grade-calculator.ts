@@ -116,22 +116,26 @@ function axePenalty100(violationCount: number): number {
   return Math.min(25, violationCount * 3)
 }
 
+/**
+ * 동일한 0~100 분석 점수에 대한 문자 등급·상태.
+ * (점수 산출식은 바꾸지 않고) 과거 대비 한 단계씩 완화된 구간 — 예: 예전 C대(73 전후)가 A대에 해당하도록 약 20점 낮춤.
+ */
 export function scoreToGradeAndStatus(score100: number): { grade: string; status: string } {
   let grade: string
-  if (score100 >= 97) grade = 'A+'
-  else if (score100 >= 93) grade = 'A'
-  else if (score100 >= 90) grade = 'A-'
-  else if (score100 >= 87) grade = 'B+'
-  else if (score100 >= 83) grade = 'B'
-  else if (score100 >= 80) grade = 'B-'
-  else if (score100 >= 77) grade = 'C+'
-  else if (score100 >= 73) grade = 'C'
-  else if (score100 >= 65) grade = 'C-'
-  else if (score100 >= 55) grade = 'D'
+  if (score100 >= 77) grade = 'A+'
+  else if (score100 >= 73) grade = 'A'
+  else if (score100 >= 70) grade = 'A-'
+  else if (score100 >= 67) grade = 'B+'
+  else if (score100 >= 63) grade = 'B'
+  else if (score100 >= 60) grade = 'B-'
+  else if (score100 >= 57) grade = 'C+'
+  else if (score100 >= 53) grade = 'C'
+  else if (score100 >= 45) grade = 'C-'
+  else if (score100 >= 35) grade = 'D'
   else grade = 'F'
 
   const status =
-    score100 >= 90 ? '우수' : score100 >= 75 ? '양호' : score100 >= 60 ? '개선 권장' : '개선 필요'
+    score100 >= 70 ? '우수' : score100 >= 55 ? '양호' : score100 >= 40 ? '개선 권장' : '개선 필요'
   return { grade, status }
 }
 
