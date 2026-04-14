@@ -10,6 +10,15 @@ function quoteEnvValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
+const GOOGLE_CRUX_ENV_KEY = 'GOOGLE_CRUX_API_KEY'
+
+function stripEnvLinesForKey(content: string, key: string): string {
+  return content
+    .split(/\r?\n/)
+    .filter((line) => !new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}=`).test(line))
+    .join('\n')
+}
+
 function upsertEnvKeys(content: string, pairs: Record<AiEnvKeyName, string>): string {
   const keysToReplace = new Set(Object.keys(pairs) as AiEnvKeyName[])
   const lines = content.split(/\r?\n/)
@@ -63,7 +72,16 @@ export async function POST(request: NextRequest) {
     /* 새 파일 */
   }
 
-  const nextContent = upsertEnvKeys(existing, pairs)
+  let nextContent = upsertEnvKeys(existing, pairs)
+
+  const cruxRaw = o[GOOGLE_CRUX_ENV_KEY]
+  const cruxVal = typeof cruxRaw === 'string' ? cruxRaw.trim() : ''
+  nextContent = stripEnvLinesForKey(nextContent, GOOGLE_CRUX_ENV_KEY).replace(/\s+$/, '')
+  if (cruxVal) {
+    nextContent = `${nextContent}\n${GOOGLE_CRUX_ENV_KEY}=${quoteEnvValue(cruxVal)}\n`
+  } else {
+    nextContent = `${nextContent}\n`
+  }
 
   try {
     await fs.writeFile(envPath, nextContent, 'utf8')

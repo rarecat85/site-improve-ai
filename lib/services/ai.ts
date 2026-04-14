@@ -1319,6 +1319,8 @@ export async function generateReport(
       }
     }
 
+    const formFactor =
+      (process.env.ANALYSIS_FORM_FACTOR || 'desktop').toLowerCase() === 'mobile' ? 'mobile' : 'desktop'
     const { cards, overallScore100 } = computeDashboardGrades({
       lighthouse: analysisResults.lighthouse,
       axe: analysisResults.axe,
@@ -1330,6 +1332,9 @@ export async function generateReport(
       pageStats: analysisResults.pageStats,
       responseMeta: analysisResults.responseMeta,
       priorities: priorities?.length ? priorities.slice(0, 3) : null,
+      crux: analysisResults.crux ?? null,
+      cruxKeyConfigured: Boolean(process.env.GOOGLE_CRUX_API_KEY?.trim()),
+      analysisFormFactor: formFactor,
     })
     parsed.dashboard = { cards, overallScore100 }
     if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats

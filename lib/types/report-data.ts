@@ -3,6 +3,7 @@
  * API/목업 필드가 늘어나면 여기와 `lib/mocks/report-preview-data.ts`를 함께 맞춥니다.
  */
 
+import type { CruxSummary } from '@/lib/services/crux'
 import type { DashboardCard } from '@/lib/utils/grade-calculator'
 
 export interface ReportImprovement {
@@ -97,6 +98,8 @@ export interface ReportData {
    * 등급·개선안 정렬에 사용(`computeDashboardGrades`, `improvementMatchesUserFocus`).
    */
   priorities?: string[]
+  /** Chrome UX Report 원본(프롬프트·재표시용). */
+  crux?: CruxSummary | null
   /**
    * 규칙 기반 대시보드(`computeDashboardGrades`). `generateReport` 응답에 포함.
    * 비교 화면의 복합 평가·전반 우세 판정에 사용.

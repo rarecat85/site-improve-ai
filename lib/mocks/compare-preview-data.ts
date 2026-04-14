@@ -10,6 +10,7 @@ const MOCK_REPORT_PREVIEW_B: ReportData = {
       { id: 'overall', label: 'OVERALL GRADE', grade: 'B+', status: '양호', score100: 76 },
       { id: 'seo', label: 'SEO 최적화', grade: 'B', status: '양호', score100: 74 },
       { id: 'performance', label: '성능/로딩', grade: 'C', status: '개선 권장', score100: 68 },
+      { id: 'crux', label: '실사용자 체감 (CrUX)', grade: 'C+', status: '개선 권장', score100: 73 },
       { id: 'accessibility', label: '접근성', grade: 'B', status: '양호', score100: 84 },
       { id: 'bestPractices', label: '모범 사례', grade: 'C+', status: '개선 권장', score100: 72 },
       { id: 'security', label: '보안', grade: 'B', status: '양호', score100: 76 },

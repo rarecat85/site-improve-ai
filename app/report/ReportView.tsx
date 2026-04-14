@@ -22,6 +22,7 @@ import type { DashboardCard } from '@/lib/utils/grade-calculator'
 import {
   computeAiseoGradeScore100,
   scoreToGradeAndStatus as score100ToGradeStatus,
+  statusForLetterGrade,
 } from '@/lib/utils/grade-calculator'
 import { CATEGORY_ORDER, getImprovementCategory } from '@/lib/utils/report-improvement-category'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
@@ -96,11 +97,12 @@ function buildHeroScoreCards(reportData: ReportData): DashboardCard[] {
   const aiseo = reportData.aiseo
   let aeo: DashboardCard
   if (aiseo?.grade && String(aiseo.grade).trim()) {
+    const g = String(aiseo.grade).trim()
     aeo = {
       id: 'aeo',
       label: 'AEO/GEO',
-      grade: String(aiseo.grade).trim(),
-      status: 'AI 검색 대응',
+      grade: g,
+      status: statusForLetterGrade(g),
       score100: typeof aiseo.overallScore === 'number' ? aiseo.overallScore : undefined,
     }
   } else if (typeof aiseo?.overallScore === 'number' && !Number.isNaN(aiseo.overallScore)) {
@@ -133,6 +135,7 @@ function buildHeroScoreCards(reportData: ReportData): DashboardCard[] {
     },
     empty('seo', 'SEO 최적화'),
     empty('performance', '성능/로딩'),
+    empty('crux', '실사용자 체감 (CrUX)'),
     empty('accessibility', '접근성'),
     empty('bestPractices', '모범 사례'),
     empty('security', '보안'),

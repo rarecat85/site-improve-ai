@@ -2,6 +2,8 @@
  * Lighthouse·axe·aiseo·페이지 통계 기반 등급(규칙 기반, 재현 가능).
  */
 
+import { computeCruxDashboardScore100, type CruxSummary } from '@/lib/services/crux'
+
 export interface DashboardCard {
   id: string
   label: string
@@ -40,6 +42,12 @@ export interface GradeCalculatorInput {
   responseMeta?: ResponseMetaSummary | null
   /** 홈에서 선택한 관심 영역 id(최대 3). 없으면 기본 가중치. */
   priorities?: string[] | null
+  /** Chrome UX Report 요약(분석 시 수집). */
+  crux?: CruxSummary | null
+  /** `GOOGLE_CRUX_API_KEY` 설정 여부(서버). 미설정 시 카드 안내 문구용. */
+  cruxKeyConfigured?: boolean
+  /** Lighthouse·CrUX와 동일: `ANALYSIS_FORM_FACTOR` desktop|mobile */
+  analysisFormFactor?: 'desktop' | 'mobile'
 }
 
 const SECURITY_HEADER_KEYS = [
@@ -142,7 +150,8 @@ export function computeAiseoGradeScore100(raw: number): number {
  */
 export const DASHBOARD_OVERALL_WEIGHTS: Record<string, number> = {
   seo: 8,
-  performance: 25,
+  performance: 18,
+  crux: 7,
   accessibility: 17,
   bestPractices: 9,
   security: 8,
@@ -249,6 +258,21 @@ export function scoreToGradeAndStatus(score100: number): { grade: string; status
   return { grade, status }
 }
 
+/**
+ * aiseo 등 **문자 등급만** 있을 때 상태 문구(점수 기반 `scoreToGradeAndStatus`와 동일한 느낌).
+ * LLM 등급 문자와 보정 점수 기반 상태가 어긋나는 것을 방지한다.
+ */
+export function statusForLetterGrade(grade: string): string {
+  const t = String(grade).trim()
+  if (!t || t === '—') return '데이터 없음'
+  const c = t.charAt(0).toUpperCase()
+  if (c === 'A') return '우수'
+  if (c === 'B') return '양호'
+  if (c === 'C') return '개선 권장'
+  if (c === 'D' || c === 'F') return '개선 필요'
+  return '개선 권장'
+}
+
 /** 모바일 대응: SEO의 viewport + 접근성 탭/뷰포트 관련 감사 */
 function mobileCombined100(lhr: any): number | null {
   const viewport = auditScore(lhr, 'viewport')
@@ -310,11 +334,43 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
       : null
   const aiseoGradeScore = aiseoScore != null ? computeAiseoGradeScore100(aiseoScore) : null
 
+  const cruxFf: 'DESKTOP' | 'PHONE' =
+    (input.analysisFormFactor || 'desktop').toLowerCase() === 'mobile' ? 'PHONE' : 'DESKTOP'
+  const cruxScore100 = computeCruxDashboardScore100(input.crux ?? null, cruxFf)
+
+  const cruxCard: DashboardCard = (() => {
+    if (cruxScore100 != null) {
+      const { grade, status } = scoreToGradeAndStatus(cruxScore100)
+      return {
+        id: 'crux',
+        label: '실사용자 체감 (CrUX)',
+        grade,
+        status,
+        score100: cruxScore100,
+      }
+    }
+    if (!input.cruxKeyConfigured) {
+      return {
+        id: 'crux',
+        label: '실사용자 체감 (CrUX)',
+        grade: '—',
+        status: 'CrUX 미연동',
+      }
+    }
+    return {
+      id: 'crux',
+      label: '실사용자 체감 (CrUX)',
+      grade: '—',
+      status: '필드 데이터 없음',
+    }
+  })()
+
   const weights = resolveDashboardWeightsForPriorities(input.priorities ?? null)
   const overallScore100FromWeighted = weightedOverallScore100(
     {
       seo,
       performance: perf,
+      crux: cruxScore100 ?? undefined,
       accessibility,
       bestPractices: bp,
       security,
@@ -351,6 +407,7 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
     { id: 'overall', label: 'OVERALL GRADE', grade: og, status: os, score100: overallScore100 },
     card('seo', 'SEO 최적화', seo, 'Lighthouse 미실행'),
     card('performance', '성능/로딩', perf, 'Lighthouse 미실행'),
+    cruxCard,
     card('accessibility', '접근성', accLh == null && axeAdj == null ? null : accessibility, '데이터 없음'),
     card('bestPractices', '모범 사례', bp, 'Lighthouse 미실행'),
     card('security', '보안', security),
@@ -365,7 +422,12 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
           : aiseoGradeScore != null
             ? scoreToGradeAndStatus(aiseoGradeScore).grade
             : '—',
-      status: aiseoGradeScore != null ? scoreToGradeAndStatus(aiseoGradeScore).status : '데이터 없음',
+      status:
+        input.aiseo?.grade && String(input.aiseo.grade).trim()
+          ? statusForLetterGrade(String(input.aiseo.grade).trim())
+          : aiseoGradeScore != null
+            ? scoreToGradeAndStatus(aiseoGradeScore).status
+            : '데이터 없음',
       // 등급 산정에 사용한 보정 점수(0~100)
       score100: aiseoGradeScore ?? undefined,
     },

@@ -340,6 +340,7 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
       { id: 'overall', label: 'OVERALL GRADE', grade: 'A-', status: '우수', score100: 82 },
       { id: 'seo', label: 'SEO 최적화', grade: 'B', status: '양호', score100: 82 },
       { id: 'performance', label: '성능/로딩', grade: 'B', status: '양호', score100: 76 },
+      { id: 'crux', label: '실사용자 체감 (CrUX)', grade: 'B', status: '양호', score100: 72 },
       { id: 'accessibility', label: '접근성', grade: 'A', status: '우수', score100: 91 },
       { id: 'bestPractices', label: '모범 사례', grade: 'B+', status: '양호', score100: 85 },
       { id: 'security', label: '보안', grade: 'C', status: '개선 권장', score100: 62 },

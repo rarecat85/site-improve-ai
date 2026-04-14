@@ -8,6 +8,7 @@ const KEY_LABELS: Record<string, string> = {
   GEMINI_API_KEY: 'Google Gemini',
   ANTHROPIC_API_KEY: 'Anthropic (Claude)',
   OPENAI_API_KEY: 'OpenAI',
+  GOOGLE_CRUX_API_KEY: 'Google CrUX (실사용자 지표, 선택)',
 }
 
 type Status = {
@@ -22,6 +23,7 @@ export default function SetupPage() {
   const [gemini, setGemini] = useState('')
   const [anthropic, setAnthropic] = useState('')
   const [openai, setOpenai] = useState('')
+  const [crux, setCrux] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -56,6 +58,7 @@ export default function SetupPage() {
           GEMINI_API_KEY: gemini,
           ANTHROPIC_API_KEY: anthropic,
           OPENAI_API_KEY: openai,
+          GOOGLE_CRUX_API_KEY: crux,
         }),
       })
       const data = (await res.json().catch(() => ({}))) as { error?: string }
@@ -115,7 +118,8 @@ export default function SetupPage() {
           <span className={styles.badge}>로컬 설정</span>
           <h1 className={styles.title}>API 키를 입력해 주세요</h1>
           <p className={styles.description}>
-            분석 기능은 Gemini·Claude·OpenAI 키가 모두 필요합니다. 아래 값은 프로젝트 루트의{' '}
+            분석 기능은 Gemini·Claude·OpenAI 키가 모두 필요합니다. Chrome UX Report(실사용자 LCP·INP·CLS)는{' '}
+            <strong>선택</strong>이며, 키가 있으면 리포트 대시보드에 반영됩니다. 아래 값은 프로젝트 루트의{' '}
             <code style={{ fontSize: '0.85em' }}>.env.local</code>에 저장됩니다(저장소에 커밋되지 않습니다).
           </p>
         </div>
@@ -166,6 +170,20 @@ export default function SetupPage() {
               required
             />
           </div>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="crux">
+              {KEY_LABELS.GOOGLE_CRUX_API_KEY}
+            </label>
+            <input
+              id="crux"
+              className={styles.input}
+              type="password"
+              autoComplete="off"
+              value={crux}
+              onChange={(e) => setCrux(e.target.value)}
+              placeholder="비워 두면 CrUX 카드는 미연동으로 표시"
+            />
+          </div>
 
           <p className={styles.note}>
             저장 후에는 Next.js가 새 환경 변수를 읽도록{' '}
@@ -186,7 +204,8 @@ export default function SetupPage() {
         </form>
 
         <p className={styles.footer}>
-          직접 편집하려면 프로젝트 루트에 <code>.env.local</code> 파일을 만들고 위 세 변수를 넣으면 됩니다.
+          직접 편집하려면 프로젝트 루트에 <code>.env.local</code> 파일을 만들고 위 변수를 넣으면 됩니다. CrUX 키는
+          생략 가능합니다.
         </p>
       </div>
     </main>

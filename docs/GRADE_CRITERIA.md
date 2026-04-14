@@ -48,6 +48,12 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 - Lighthouse **Performance 카테고리** 점수만 사용(상단 요약의 유일한 성능 지표).
 - 이미지·스크립트 관련 **개별 감사**(`uses-optimized-images`, `bootup-time` 등)는 **등급·OVERALL 가중에 포함하지 않음** — 성능 탭 개선안·감사 폴백에서만 반영.
 
+### 실사용자 체감 (CrUX)
+
+- Chrome UX Report API로 수집한 **필드 데이터(p75)** 를 사용합니다. `GOOGLE_CRUX_API_KEY`가 없거나 URL에 공개 표본이 없으면 카드는 **CrUX 미연동** 또는 **필드 데이터 없음**으로 표시되고, OVERALL 가중에서 해당 항목(`crux`)은 제외됩니다.
+- 분석 시 선택한 **폼 팩터**(데스크톱/모바일)에 맞는 레코드에서 **LCP·INP·CLS** 각각을 0~100으로 환산한 뒤, 가중 **40%·40%·20%** 로 합칩니다. 세 지표 중 일부만 있으면 **있는 지표만으로 가중치를 재정규화**합니다(`lib/services/crux.ts`의 `computeCruxDashboardScore100`).
+- Lighthouse 성능 점수와는 **별개**입니다(실험실 vs 실사용자).
+
 ### 접근성
 
 1. Lighthouse **Accessibility 카테고리** 점수를 기준으로 함.
@@ -87,7 +93,7 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 
 ### AEO/GEO
 
-1. `aiseo-audit`이 **문자 등급(`grade`)** 을 주면 그 문자열을 **그대로** 표시.
+1. `aiseo-audit`이 **문자 등급(`grade`)** 을 주면 그 문자열을 **그대로** 표시하고, **상태 문구**는 등급 글자(A/B/C/D/F)에 맞춰 `statusForLetterGrade`로 붙입니다(보정 점수만으로 “우수”가 나와 등급 “D”와 충돌하지 않도록 함).
 2. 없으면 `overallScore`를 0~100으로 반올림한 뒤, **AEO/GEO 전용 완화 보정**을 적용해 등급·상태를 산출합니다.
    - 보정 점수 = `min(100, round(overallScore * 1.3))`
    - 카드에 표시하는 `score100`·**OVERALL 가중 평균에 쓰는 값** 모두 이 **보정 점수**를 사용합니다(원시 `overallScore`는 리포트 JSON 등 다른 용도로 유지 가능).
@@ -102,7 +108,8 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 | 항목(id) | 기본 가중치 |
 |----------|-------------|
 | SEO (`seo`) | 8 |
-| 성능/로딩 (`performance`) | 25 |
+| 성능/로딩 (`performance`) | 18 |
+| 실사용자 체감 (`crux`) | 7 |
 | 접근성 (`accessibility`) | 17 |
 | 모범 사례 (`bestPractices`) | 9 |
 | 보안 (`security`) | 8 |
@@ -112,7 +119,7 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 
 (과거 스크립트·이미지 클러스터 가중은 제거 — 세부 감사는 성능 탭·개선안에서만 사용.)
 
-성능·접근성·AEO/GEO의 비중이 나머지보다 크되, 극단적인 차이는 나지 않도록 맞춘 값입니다.
+성능·CrUX·접근성·AEO/GEO의 비중이 나머지보다 크되, 극단적인 차이는 나지 않도록 맞춘 값입니다.
 
 ### 사용자 관심 영역(우선순위)
 

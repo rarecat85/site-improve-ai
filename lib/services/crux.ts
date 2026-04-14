@@ -128,6 +128,71 @@ export async function fetchCruxSummary(pageUrl: string, apiKey?: string): Promis
   }
 }
 
+/** LCP p75(ms): good ≤2.5s, poor ≥4s (Chrome Web Vitals) */
+function scoreLcpP75(ms: number): number {
+  const good = 2500
+  const poor = 4000
+  if (ms <= good) return 100
+  if (ms >= poor) return 0
+  return Math.round(100 * (1 - (ms - good) / (poor - good)))
+}
+
+/** INP p75(ms): good ≤200ms, poor ≥500ms */
+function scoreInpP75(ms: number): number {
+  const good = 200
+  const poor = 500
+  if (ms <= good) return 100
+  if (ms >= poor) return 0
+  return Math.round(100 * (1 - (ms - good) / (poor - good)))
+}
+
+/** CLS p75: good ≤0.1, poor ≥0.25 (CrUX는 큰 값으로 올 수 있어 100배 스케일 보정) */
+function scoreClsP75(raw: number): number {
+  let cls = raw
+  if (cls > 1) cls = cls / 100
+  const good = 0.1
+  const poor = 0.25
+  if (cls <= good) return 100
+  if (cls >= poor) return 0
+  return Math.round(100 * (1 - (cls - good) / (poor - good)))
+}
+
+/**
+ * CrUX 필드 데이터를 대시보드용 0~100 한 점수로 합침.
+ * LCP·INP·CLS에 가중(기본 40%·40%·20%), 없는 지표는 제외 후 가중치 재정규화.
+ */
+export function computeCruxDashboardScore100(
+  summary: CruxSummary | null | undefined,
+  formFactor: 'DESKTOP' | 'PHONE'
+): number | null {
+  if (!summary?.records?.length) return null
+  const rec =
+    summary.records.find((r) => r.formFactor === formFactor) ?? summary.records[0]
+  const m = rec.metrics
+  const scores: number[] = []
+  const w: number[] = []
+  if (m.largest_contentful_paint?.value != null) {
+    scores.push(scoreLcpP75(m.largest_contentful_paint.value))
+    w.push(0.4)
+  }
+  if (m.interaction_to_next_paint?.value != null) {
+    scores.push(scoreInpP75(m.interaction_to_next_paint.value))
+    w.push(0.4)
+  }
+  if (m.cumulative_layout_shift?.value != null) {
+    scores.push(scoreClsP75(m.cumulative_layout_shift.value))
+    w.push(0.2)
+  }
+  if (scores.length === 0) return null
+  const sumW = w.reduce((a, b) => a + b, 0)
+  if (sumW <= 0) return null
+  let acc = 0
+  for (let i = 0; i < scores.length; i++) {
+    acc += scores[i]! * (w[i]! / sumW)
+  }
+  return Math.round(Math.min(100, Math.max(0, acc)))
+}
+
 export function formatCruxForPrompt(summary: CruxSummary | null): string {
   if (!summary || summary.records.length === 0) {
     return summary?.note
