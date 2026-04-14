@@ -12,7 +12,7 @@
 
 1) `POST /api/analyze`  
 2) `analyzeWebsite(url)`가 Puppeteer로 페이지를 열고 Lighthouse/axe 등을 수행  
-3) `generateReport(requirement, analysisResults, url)`가 개선안(improvements) 생성 + 규칙 기반 요약을 병합  
+3) `generateReport(requirement, analysisResults, url, priorities?)`가 개선안(improvements) 생성 + 규칙 기반 요약을 병합  
 4) `ReportView`가 결과 객체를 렌더링
 
 이 중 qualityAudit은 아래 2개 단계에서 구성됩니다.

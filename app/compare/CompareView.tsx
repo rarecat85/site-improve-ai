@@ -316,7 +316,7 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
 
     if (winComposite !== 'tie' && winComposite === w) {
       reasons.push(
-        `${winName}는 Lighthouse·axe 기반 대시보드 카드(로컬 비교 시 보안 카드 제외)·마크업/리소스 품질·AEO·이슈 부담을 조합한 복합 점수에서 상대적으로 유리합니다.`
+        `${winName}는 Lighthouse·axe 기반 가중 대시보드(로컬 비교 시 보안 제외)·마크업/리소스 품질·이슈 부담을 조합한 복합 점수에서 상대적으로 유리합니다.`
       )
     } else if (winComposite === 'tie') {
       reasons.push(
@@ -482,8 +482,9 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
         <p className={styles.subtitle}>
           두 URL에 대해 동일한 파이프라인으로 분석한 뒤, 이슈 밀도·우선순위·항목별 지표를 나란히 봅니다.
           <br />
-          전반 우세는 개선 항목 개수만이 아니라, 규칙 기반 대시보드(Lighthouse·axe 등)·품질·AEO·이슈 부담을
-          섞은 복합 점수를 먼저 씁니다. 동률일 때만 전체 이슈 → 높은 우선 → AEO 순으로 가늠합니다.
+          전반 우세는 개선 항목 개수만이 아니라, 규칙 기반 가중 대시보드(Lighthouse·axe 등, 성능·접근성·AEO/GEO
+          비중↑)·품질·이슈 부담을 섞은 복합 점수를 먼저 씁니다. 동률일 때만 전체 이슈 → 높은 우선 → AEO 순으로
+          가늠합니다.
           <br />
           숫자가 작을수록 해당 지표에서는 유리한 편입니다(높은 우선 이슈·전체 이슈). 복합·AEO/GEO 점수는 높을수록
           유리합니다.
@@ -635,18 +636,18 @@ export default function CompareView({ initialPreview = false }: CompareViewProps
               <div className={styles.summarySide}>
                 <span className={styles.summarySideLabel}>A</span>
                 <span className={styles.summaryNum}>
-                  {metricsA.aiseoOverall != null ? Math.round(metricsA.aiseoOverall) : '—'}
+                  {metricsA.aiseoCompareScore100 != null ? Math.round(metricsA.aiseoCompareScore100) : '—'}
                 </span>
               </div>
               <div className={styles.summarySide}>
                 <span className={styles.summarySideLabel}>B</span>
                 <span className={styles.summaryNum}>
-                  {metricsB.aiseoOverall != null ? Math.round(metricsB.aiseoOverall) : '—'}
+                  {metricsB.aiseoCompareScore100 != null ? Math.round(metricsB.aiseoCompareScore100) : '—'}
                 </span>
               </div>
             </div>
             <div className={styles.summaryVerdict}>
-              {metricsA.aiseoOverall == null && metricsB.aiseoOverall == null
+              {metricsA.aiseoCompareScore100 == null && metricsB.aiseoCompareScore100 == null
                 ? '데이터 없음'
                 : winnerLabel(winAiseo, 'A', 'B')}
             </div>

@@ -169,10 +169,9 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 
 ---
 
-## 6. 상단 카드만 있고 탭이 없는 항목 (이미지·스크립트)
+## 6. 상단 요약 vs 세부 감사 (성능·이미지·JS)
 
-`computeDashboardGrades`는 **이미지 최적화**·**스크립트 리소스** 점수를 별도 카드로 보여 주지만, **이름 그대로의 전용 탭은 없습니다.**  
-Lighthouse 감사 근거의 문장형 개선안은 AI가 **성능** 또는 **모범사례** 등 적절한 카테고리로 넣으면 **Performance / Best Practices** 탭에서 확인하면 됩니다(일부는 **UX/UI**로 분류될 수 있음).
+상단 대시보드의 **성능**은 Lighthouse **Performance 카테고리 점수 한 가지**로 요약합니다. **이미지·자바스크립트 관련 세부 감사**(예: `uses-optimized-images`, `bootup-time`, `unused-javascript`)는 **전체 등급 가중치·별도 카드에 넣지 않고**, **성능 탭**의 개선안·Lighthouse 폴백(`derivePerformanceImprovementsFromAudits` 등)에서만 다룹니다.
 
 ---
 

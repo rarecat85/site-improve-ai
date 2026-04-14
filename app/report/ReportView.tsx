@@ -19,7 +19,10 @@ import {
 import { MOCK_REPORT_PREVIEW, PREVIEW_REQUIREMENT_TEXT } from '@/lib/mocks/report-preview-data'
 import type { ReportData, ReportImprovement as Improvement } from '@/lib/types/report-data'
 import type { DashboardCard } from '@/lib/utils/grade-calculator'
-import { scoreToGradeAndStatus as score100ToGradeStatus } from '@/lib/utils/grade-calculator'
+import {
+  computeAiseoGradeScore100,
+  scoreToGradeAndStatus as score100ToGradeStatus,
+} from '@/lib/utils/grade-calculator'
 import { CATEGORY_ORDER, getImprovementCategory } from '@/lib/utils/report-improvement-category'
 import { PreviewModeBanner } from '@/app/components/analysis/PreviewModeBanner'
 import styles from './report.module.css'
@@ -101,13 +104,14 @@ function buildHeroScoreCards(reportData: ReportData): DashboardCard[] {
       score100: typeof aiseo.overallScore === 'number' ? aiseo.overallScore : undefined,
     }
   } else if (typeof aiseo?.overallScore === 'number' && !Number.isNaN(aiseo.overallScore)) {
-    const g = scoreToGradeAndStatus(aiseo.overallScore)
+    const adj = computeAiseoGradeScore100(aiseo.overallScore)
+    const g = scoreToGradeAndStatus(adj)
     aeo = {
       id: 'aeo',
       label: 'AEO/GEO',
       grade: g.grade,
       status: g.status,
-      score100: aiseo.overallScore,
+      score100: adj,
     }
   } else {
     aeo = { id: 'aeo', label: 'AEO/GEO', grade: '—', status: '데이터 없음' }
@@ -130,11 +134,10 @@ function buildHeroScoreCards(reportData: ReportData): DashboardCard[] {
     empty('seo', 'SEO 최적화'),
     empty('performance', '성능/로딩'),
     empty('accessibility', '접근성'),
+    empty('bestPractices', '모범 사례'),
     empty('security', '보안'),
     { id: 'quality', label: '마크업/리소스', grade: qualityG.grade, status: qualityG.status },
     empty('mobile', '모바일 대응'),
-    empty('image', '이미지 최적화'),
-    empty('script', '스크립트 리소스'),
     aeo,
   ]
 }

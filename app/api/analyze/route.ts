@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
             step: 1.0,
           })
           const [reportResult, contentInsights, archSummarized] = await Promise.all([
-            generateReport(requirement, analysisResults, url),
+            generateReport(requirement, analysisResults, url, priorityList),
             analyzeContentInsights(analysisResults),
             archExtract.rows.length > 0 && archExtract.sections.length > 0
               ? summarizePageArchitectureSections(archExtract.sections, archExtract.rows)

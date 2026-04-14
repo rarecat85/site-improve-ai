@@ -1,4 +1,9 @@
 import type { ReportData } from '@/lib/types/report-data'
+import {
+  computeAiseoGradeScore100,
+  resolveDashboardWeightsForPriorities,
+  weightedOverallScore100,
+} from '@/lib/utils/grade-calculator'
 import { CATEGORY_ORDER, getImprovementCategory } from '@/lib/utils/report-improvement-category'
 
 export type CompareSideMetrics = {
@@ -7,7 +12,10 @@ export type CompareSideMetrics = {
   matchesRequirementCount: number
   /** 표준 카테고리 + 기타 */
   byCategory: Record<string, { count: number; highCount: number }>
+  /** aiseo 원점수(0~100) */
   aiseoOverall: number | null
+  /** 대시보드·전체 평균과 동일한 AEO 보정 점수(없으면 null) */
+  aiseoCompareScore100: number | null
 }
 
 function emptyByCategory(): Record<string, { count: number; highCount: number }> {
@@ -66,6 +74,8 @@ export function computeCompareSideMetrics(
   const raw = data.aiseo?.overallScore
   const aiseoOverall =
     typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+  const aiseoCompareScore100 =
+    aiseoOverall != null ? computeAiseoGradeScore100(aiseoOverall) : null
 
   return {
     totalIssues,
@@ -73,6 +83,7 @@ export function computeCompareSideMetrics(
     matchesRequirementCount,
     byCategory,
     aiseoOverall,
+    aiseoCompareScore100,
   }
 }
 
@@ -128,11 +139,11 @@ export function compareCategoryWinner(
 }
 
 export function compareAiseoWinner(a: CompareSideMetrics, b: CompareSideMetrics): CompareWinner {
-  if (a.aiseoOverall == null && b.aiseoOverall == null) return 'tie'
-  if (a.aiseoOverall == null) return 'b'
-  if (b.aiseoOverall == null) return 'a'
-  if (a.aiseoOverall > b.aiseoOverall) return 'a'
-  if (b.aiseoOverall > a.aiseoOverall) return 'b'
+  if (a.aiseoCompareScore100 == null && b.aiseoCompareScore100 == null) return 'tie'
+  if (a.aiseoCompareScore100 == null) return 'b'
+  if (b.aiseoCompareScore100 == null) return 'a'
+  if (a.aiseoCompareScore100 > b.aiseoCompareScore100) return 'a'
+  if (b.aiseoCompareScore100 > a.aiseoCompareScore100) return 'b'
   return 'tie'
 }
 
@@ -155,24 +166,38 @@ function securityScore100FromReport(report: ReportData): number | null {
 }
 
 /**
- * `dashboard.cards`에서 `overall` 제외 평균. 로컬 비교 시 보안 카드는 배포와 신호가 달라 제외.
+ * `dashboard.cards` 점수로 `computeDashboardGrades`와 동일 가중치의 전체 점수.
+ * 로컬 비교 시 보안 카드는 배포와 신호가 달라 제외(가중치만 재정규화).
  */
-export function averageDashboardCardsScore(
+export function weightedDashboardCardsScore(
   report: ReportData,
   options: { excludeSecurity: boolean }
 ): number | null {
   const cards = report.dashboard?.cards
   if (!cards?.length) return null
-  const scores: number[] = []
+  const scores: Record<string, number> = {}
   for (const c of cards) {
     if (c.id === 'overall') continue
     if (options.excludeSecurity && c.id === 'security') continue
     if (typeof c.score100 === 'number' && Number.isFinite(c.score100)) {
-      scores.push(Math.max(0, Math.min(100, c.score100)))
+      scores[c.id] = Math.max(0, Math.min(100, c.score100))
     }
   }
-  if (scores.length === 0) return null
-  return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+  const weights = resolveDashboardWeightsForPriorities(report.priorities ?? null)
+  return weightedOverallScore100(scores, weights)
+}
+
+/** 비교 복합 점수용: 저장된 전체 점수 또는 카드 가중 평균 */
+export function dashboardBlendScore100ForCompare(
+  report: ReportData,
+  localhostMode: boolean
+): number | null {
+  if (localhostMode) {
+    return weightedDashboardCardsScore(report, { excludeSecurity: true })
+  }
+  const o = report.dashboard?.overallScore100
+  if (typeof o === 'number' && Number.isFinite(o)) return Math.round(o)
+  return weightedDashboardCardsScore(report, { excludeSecurity: false })
 }
 
 /**
@@ -193,29 +218,28 @@ export function computeEffectiveCompareScore100(
   metrics: CompareSideMetrics,
   localhostMode: boolean
 ): number {
-  const cardAvg = averageDashboardCardsScore(report, { excludeSecurity: localhostMode })
+  const cardBlend = dashboardBlendScore100ForCompare(report, localhostMode)
   const issue = issueBurdenScore100(metrics)
   const q = qualityScore100FromReport(report)
-  const a = metrics.aiseoOverall
   const sec = localhostMode ? null : securityScore100FromReport(report)
 
-  if (cardAvg != null) {
-    let blend = 0.58 * cardAvg + 0.24 * issue
+  if (cardBlend != null) {
+    let blend = 0.58 * cardBlend + 0.24 * issue
     const aux: number[] = []
     if (q != null) aux.push(q)
-    if (a != null) aux.push(a)
     if (sec != null) aux.push(sec)
+    // AEO 보정 점수는 대시보드 가중 전체·카드 블렌드에 이미 반영 — aux에서 중복 제외
     if (aux.length > 0) {
       blend += 0.18 * (aux.reduce((x, y) => x + y, 0) / aux.length)
     } else {
-      blend += 0.18 * cardAvg
+      blend += 0.18 * cardBlend
     }
     return Math.round(Math.min(100, Math.max(0, blend)))
   }
 
   const fallback: number[] = [issue]
   if (q != null) fallback.push(q)
-  if (a != null) fallback.push(a)
+  if (metrics.aiseoCompareScore100 != null) fallback.push(metrics.aiseoCompareScore100)
   if (sec != null) fallback.push(sec)
   return Math.round(
     Math.min(100, Math.max(0, fallback.reduce((x, y) => x + y, 0) / fallback.length))

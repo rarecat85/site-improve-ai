@@ -93,6 +93,11 @@ export interface ReportData {
     }>
   }
   /**
+   * 홈에서 선택한 관심 영역 id(최대 3). 없으면 전체 균등 가중.
+   * 등급·개선안 정렬에 사용(`computeDashboardGrades`, `improvementMatchesUserFocus`).
+   */
+  priorities?: string[]
+  /**
    * 규칙 기반 대시보드(`computeDashboardGrades`). `generateReport` 응답에 포함.
    * 비교 화면의 복합 평가·전반 우세 판정에 사용.
    */

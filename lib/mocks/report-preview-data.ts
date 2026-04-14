@@ -333,19 +333,19 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
     ],
   },
   /** 비교 화면 복합 점수·리포트 일관성용(규칙 기반 대시보드와 동일 id) */
+  priorities: ['seo', 'performance', 'accessibility'],
   dashboard: {
-    overallScore100: 79,
+    overallScore100: 82,
     cards: [
-      { id: 'overall', label: 'OVERALL GRADE', grade: 'B+', status: '양호', score100: 79 },
+      { id: 'overall', label: 'OVERALL GRADE', grade: 'A-', status: '우수', score100: 82 },
       { id: 'seo', label: 'SEO 최적화', grade: 'B', status: '양호', score100: 82 },
       { id: 'performance', label: '성능/로딩', grade: 'B', status: '양호', score100: 76 },
       { id: 'accessibility', label: '접근성', grade: 'A', status: '우수', score100: 91 },
+      { id: 'bestPractices', label: '모범 사례', grade: 'B+', status: '양호', score100: 85 },
       { id: 'security', label: '보안', grade: 'C', status: '개선 권장', score100: 62 },
       { id: 'quality', label: '마크업/리소스', grade: 'B', status: '양호', score100: 79 },
       { id: 'mobile', label: '모바일 대응', grade: 'B', status: '양호', score100: 80 },
-      { id: 'image', label: '이미지 최적화', grade: 'C', status: '개선 권장', score100: 64 },
-      { id: 'script', label: '스크립트 리소스', grade: 'B', status: '양호', score100: 74 },
-      { id: 'aeo', label: 'AEO/GEO', grade: 'B+', status: '양호', score100: 72 },
+      { id: 'aeo', label: 'AEO/GEO', grade: 'A-', status: '우수', score100: 94 },
     ],
   },
   aiseo: {

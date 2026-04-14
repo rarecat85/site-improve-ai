@@ -7,6 +7,7 @@ import {
   formatAxeSummaryForPrompt,
   formatAiseoSummaryForPrompt,
 } from '@/lib/utils/analysis-summary'
+import { improvementMatchesUserFocus } from '@/lib/utils/analysis-priorities'
 import { computeDashboardGrades, formatResponseMetaForPrompt } from '@/lib/utils/grade-calculator'
 import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
@@ -1142,7 +1143,9 @@ function isLocalhostUrl(raw: string): boolean {
 export async function generateReport(
   requirement: string,
   analysisResults: AnalysisResults,
-  analyzedUrl?: string
+  analyzedUrl?: string,
+  /** 홈 화면 관심 영역(최대 3). 없으면 대시보드 기본 가중·기존 정렬. */
+  priorities?: string[]
 ): Promise<any> {
   const metadata = analysisResults.metadata || {}
   const contextBlock = [
@@ -1231,12 +1234,6 @@ export async function generateReport(
       }
     }
 
-    const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
-    allImprovements.sort((a, b) => {
-      if (a.matchesRequirement !== b.matchesRequirement) return a.matchesRequirement ? -1 : 1
-      return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
-    })
-
     const byCategory: Record<string, number> = { SEO: 0, 접근성: 0, 'UX/UI': 0, 성능: 0, 모범사례: 0, 'AEO/GEO': 0 }
     allImprovements.forEach((i) => {
       const c = normalizeCategory(i.category, i.source)
@@ -1275,8 +1272,14 @@ export async function generateReport(
     // 모바일 대응(규칙 기반) — 별도 탭을 만들지 않고 기존 카테고리(주로 UX/UI)에 포함
     allImprovements.push(...deriveMobileImprovements(analysisResults))
 
-    // derived UX/UI 개선안을 포함한 뒤 다시 정렬/요약 계산
+    // derived UX/UI·보안·모바일 포함 후 정렬: (선택 시) 관심 영역 → 요구사항 부합 → high/medium/low
+    const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
     allImprovements.sort((a, b) => {
+      if (priorities?.length) {
+        const fa = improvementMatchesUserFocus(a, priorities)
+        const fb = improvementMatchesUserFocus(b, priorities)
+        if (fa !== fb) return fa ? -1 : 1
+      }
       if (a.matchesRequirement !== b.matchesRequirement) return a.matchesRequirement ? -1 : 1
       return (priorityOrder[a.priority] ?? 1) - (priorityOrder[b.priority] ?? 1)
     })
@@ -1290,8 +1293,14 @@ export async function generateReport(
     summary.totalIssues = allImprovements.length
     summary.highPriority = allImprovements.filter((i) => i.priority === 'high').length
     summary.requirementAlignment = `요구사항 부합 ${allImprovements.filter((i) => i.matchesRequirement).length}건, 기본 분석 ${allImprovements.filter((i) => !i.matchesRequirement).length}건 포함.`
+    if (priorities?.length) {
+      summary.priorityCriteria =
+        `홈에서 선택한 관심 영역(${priorities.join(', ')})과 일치하는 개선안을 동일 조건에서 상단에 두었습니다. ` +
+        summary.priorityCriteria
+    }
 
     const parsed: any = { improvements: allImprovements, summary }
+    if (priorities?.length) parsed.priorities = priorities.slice(0, 3)
 
     if (qualityAudit) {
       parsed.qualityAudit = {
@@ -1320,6 +1329,7 @@ export async function generateReport(
         : null,
       pageStats: analysisResults.pageStats,
       responseMeta: analysisResults.responseMeta,
+      priorities: priorities?.length ? priorities.slice(0, 3) : null,
     })
     parsed.dashboard = { cards, overallScore100 }
     if (analysisResults.pageStats) parsed.pageStats = analysisResults.pageStats

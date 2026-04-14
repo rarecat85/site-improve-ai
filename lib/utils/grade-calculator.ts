@@ -38,6 +38,8 @@ export interface GradeCalculatorInput {
   qualityAudit?: { semanticScore?: number | null; efficiencyScore?: number | null } | null
   pageStats?: PageStatsSummary | null
   responseMeta?: ResponseMetaSummary | null
+  /** 홈에서 선택한 관심 영역 id(최대 3). 없으면 기본 가중치. */
+  priorities?: string[] | null
 }
 
 const SECURITY_HEADER_KEYS = [
@@ -102,18 +104,126 @@ function auditScore(lhr: any, id: string): number | null {
   return Math.round(Math.max(0, Math.min(1, s)) * 100)
 }
 
-function avgAuditScores(lhr: any, ids: string[]): number | null {
-  const vals: number[] = []
-  for (const id of ids) {
-    const v = auditScore(lhr, id)
-    if (v != null) vals.push(v)
-  }
-  if (vals.length === 0) return null
-  return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+/** axe 규칙별 1건당 가중(영향도). 노드 수가 아니라 규칙(위반 유형) 단위. */
+const AXE_IMPACT_WEIGHT: Record<string, number> = {
+  critical: 9,
+  serious: 6,
+  moderate: 3.5,
+  minor: 1.5,
 }
 
-function axePenalty100(violationCount: number): number {
-  return Math.min(25, violationCount * 3)
+function axePenalty100FromViolations(violations: unknown): number {
+  if (!Array.isArray(violations) || violations.length === 0) return 0
+  let sum = 0
+  for (const v of violations) {
+    if (!v || typeof v !== 'object') {
+      sum += 3
+      continue
+    }
+    const imp = String((v as { impact?: string }).impact ?? '').toLowerCase()
+    sum += AXE_IMPACT_WEIGHT[imp] ?? 3
+  }
+  return Math.min(30, sum)
+}
+
+/**
+ * AEO/GEO 카드·전체 평균용 보정 점수(원점수 0~100 → 상한 100).
+ * 원점수는 `aiseo.overallScore`·리포트 저장값으로 그대로 유지.
+ */
+export function computeAiseoGradeScore100(raw: number): number {
+  const s = Math.max(0, Math.min(100, Math.round(raw)))
+  return Math.max(0, Math.min(100, Math.round(s * 1.3)))
+}
+
+/**
+ * 대시보드 전체 점수 기본 가중치(합 100).
+ * 성능은 Lighthouse **Performance 카테고리 1개**만 상단에 두며, 이미지·JS 세부 감사 점수는 전체·카드에 넣지 않음.
+ * 성능·접근성·AEO/GEO가 나머지보다 다소 높음.
+ */
+export const DASHBOARD_OVERALL_WEIGHTS: Record<string, number> = {
+  seo: 8,
+  performance: 25,
+  accessibility: 17,
+  bestPractices: 9,
+  security: 8,
+  quality: 8,
+  mobile: 8,
+  aeo: 17,
+}
+
+/** 홈 화면 `FOCUS_OPTIONS.id` → `DASHBOARD_OVERALL_WEIGHTS` 키 */
+const PRIORITY_ID_TO_WEIGHT_KEY: Record<string, string> = {
+  seo: 'seo',
+  performance: 'performance',
+  accessibility: 'accessibility',
+  best: 'bestPractices',
+  security: 'security',
+  quality: 'quality',
+  geo: 'aeo',
+}
+
+/**
+ * 사용자가 관심 영역을 고른 경우: 선택 항목(순서대로)에 더 큰 가중, 나머지는 완만히 낮춤.
+ * 미선택·빈 배열이면 `DASHBOARD_OVERALL_WEIGHTS`와 동일.
+ */
+export function resolveDashboardWeightsForPriorities(
+  priorityIds: string[] | undefined | null
+): Record<string, number> {
+  if (!priorityIds?.length) return { ...DASHBOARD_OVERALL_WEIGHTS }
+
+  const ORDERED_MULT = [2.45, 2.05, 1.72]
+  const keys: string[] = []
+  for (let i = 0; i < priorityIds.length && keys.length < 3; i++) {
+    const k = PRIORITY_ID_TO_WEIGHT_KEY[priorityIds[i]!]
+    if (k && !keys.includes(k)) keys.push(k)
+  }
+  if (keys.length === 0) return { ...DASHBOARD_OVERALL_WEIGHTS }
+
+  const raw: Record<string, number> = {}
+  for (const [dim, w] of Object.entries(DASHBOARD_OVERALL_WEIGHTS)) {
+    raw[dim] = w
+  }
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i]!
+    const m = ORDERED_MULT[i] ?? ORDERED_MULT[ORDERED_MULT.length - 1]!
+    if (raw[k] != null) raw[k] *= m
+  }
+  for (const dim of Object.keys(raw)) {
+    if (!keys.includes(dim)) raw[dim]! *= 0.58
+  }
+
+  const sumRaw = Object.values(raw).reduce((a, b) => a + b, 0)
+  if (sumRaw <= 0) return { ...DASHBOARD_OVERALL_WEIGHTS }
+
+  const out: Record<string, number> = {}
+  for (const dim of Object.keys(raw)) {
+    out[dim] = Math.round(((raw[dim]! / sumRaw) * 10000)) / 100
+  }
+  const drift = Math.round((100 - Object.values(out).reduce((a, b) => a + b, 0)) * 100) / 100
+  if (drift !== 0 && keys[0] != null && out[keys[0]] != null) {
+    out[keys[0]] = Math.round((out[keys[0]]! + drift) * 100) / 100
+  }
+  return out
+}
+
+/**
+ * 항목별 점수(없는 항목은 제외)로 가중 평균. 모두 없으면 null.
+ */
+export function weightedOverallScore100(
+  scores: Partial<Record<string, number | null | undefined>>,
+  weights: Record<string, number> = DASHBOARD_OVERALL_WEIGHTS
+): number | null {
+  let wSum = 0
+  let weighted = 0
+  for (const [key, w] of Object.entries(weights)) {
+    const v = scores[key]
+    if (v == null || Number.isNaN(v)) continue
+    const clamped = Math.max(0, Math.min(100, Number(v)))
+    weighted += w * clamped
+    wSum += w
+  }
+  if (wSum === 0) return null
+  return Math.round(weighted / wSum)
 }
 
 /**
@@ -166,46 +276,22 @@ function securityCombined100(lhr: any, responseMeta: ResponseMetaSummary | null 
   return Math.max(0, Math.min(100, base))
 }
 
-function imageCluster100(lhr: any, perfCat: number | null): number {
-  const img = avgAuditScores(lhr, [
-    'uses-optimized-images',
-    'modern-image-formats',
-    'efficient-animated-content',
-    'offscreen-images',
-  ])
-  if (img != null) return img
-  return perfCat ?? 70
-}
-
-function scriptCluster100(lhr: any, perfCat: number | null): number {
-  const sc = avgAuditScores(lhr, ['bootup-time', 'unused-javascript', 'legacy-javascript'])
-  if (sc != null) return sc
-  return perfCat ?? 70
-}
-
-/** AEO/GEO는 분포가 낮아 등급 판정을 완화(동일 표를 쓰되 점수를 보정) */
-function aiseoGradeScore100(raw: number): number {
-  const s = Math.max(0, Math.min(100, Math.round(raw)))
-  // 대부분의 사이트가 과도하게 F로 떨어지는 것을 방지하기 위한 완화 스케일링.
-  // 예: 40→52, 50→65, 60→78, 70→91 (상한 100)
-  return Math.max(0, Math.min(100, Math.round(s * 1.3)))
-}
-
 /**
- * 대시보드 카드 10종 + 전체 점수
+ * 대시보드 카드(성능은 Lighthouse Performance 1개, 모범 사례 포함) + 가중 전체 점수
  */
 export function computeDashboardGrades(input: GradeCalculatorInput): {
   cards: DashboardCard[]
   overallScore100: number
 } {
   const lhr = input.lighthouse
-  const violations = input.axe?.violations?.length ?? 0
+  const axeViolations = input.axe?.violations
+  const penalty = axePenalty100FromViolations(axeViolations)
 
   const seo = lhScore(lhr?.categories?.seo)
   const perf = lhScore(lhr?.categories?.performance)
   const accLh = lhScore(lhr?.categories?.accessibility)
   const bp = lhScore(lhr?.categories?.['best-practices'])
-  const axeAdj = accLh != null ? Math.max(0, accLh - axePenalty100(violations)) : null
+  const axeAdj = accLh != null ? Math.max(0, accLh - penalty) : null
   const accessibility = axeAdj ?? accLh ?? 70
 
   const qualityScore =
@@ -217,35 +303,31 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
       ? Math.max(0, Math.min(100, Math.round(input.securityAudit.score100)))
       : securityCombined100(lhr, input.responseMeta)
   const mobile = mobileCombined100(lhr)
-  const image = imageCluster100(lhr, perf)
-  const script = scriptCluster100(lhr, perf)
 
   const aiseoScore =
     typeof input.aiseo?.overallScore === 'number' && !Number.isNaN(input.aiseo.overallScore)
       ? Math.max(0, Math.min(100, Math.round(input.aiseo.overallScore)))
       : null
-  const aiseoGradeScore = aiseoScore != null ? aiseoGradeScore100(aiseoScore) : null
+  const aiseoGradeScore = aiseoScore != null ? computeAiseoGradeScore100(aiseoScore) : null
 
-  const overallScores: number[] = []
-  const pushOverall = (score: number | null | undefined) => {
-    if (score == null || Number.isNaN(score)) return
-    overallScores.push(score)
-  }
+  const weights = resolveDashboardWeightsForPriorities(input.priorities ?? null)
+  const overallScore100FromWeighted = weightedOverallScore100(
+    {
+      seo,
+      performance: perf,
+      accessibility,
+      bestPractices: bp,
+      security,
+      quality: qualityScore ?? undefined,
+      mobile,
+      aeo: aiseoGradeScore ?? undefined,
+    },
+    weights
+  )
 
-  pushOverall(seo)
-  pushOverall(perf)
-  pushOverall(accessibility)
-  pushOverall(bp)
-  pushOverall(security)
-  pushOverall(qualityScore ?? null)
-  pushOverall(mobile)
-  pushOverall(image)
-  pushOverall(script)
-  if (aiseoScore != null) pushOverall(aiseoScore)
-
-  let overallScore100 = 0
-  if (overallScores.length > 0) {
-    overallScore100 = Math.round(overallScores.reduce((s, p) => s + p, 0) / overallScores.length)
+  let overallScore100: number
+  if (overallScore100FromWeighted != null) {
+    overallScore100 = overallScore100FromWeighted
   } else {
     overallScore100 = 65
   }
@@ -270,11 +352,10 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
     card('seo', 'SEO 최적화', seo, 'Lighthouse 미실행'),
     card('performance', '성능/로딩', perf, 'Lighthouse 미실행'),
     card('accessibility', '접근성', accLh == null && axeAdj == null ? null : accessibility, '데이터 없음'),
+    card('bestPractices', '모범 사례', bp, 'Lighthouse 미실행'),
     card('security', '보안', security),
     card('quality', '마크업/리소스', qualityScore ?? null, '데이터 없음'),
     card('mobile', '모바일 대응', mobile, '데이터 없음'),
-    card('image', '이미지 최적화', image),
-    card('script', '스크립트 리소스', script),
     {
       id: 'aeo',
       label: 'AEO/GEO',

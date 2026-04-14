@@ -35,9 +35,10 @@ URL과 분석 관심 영역(우선순위)을 입력하면, **Lighthouse·axe·AE
 ## 2. 서비스 개요 (무엇을 하나요)
 
 - **단일 페이지 분석**: URL + (선택) 최대 3개 관심 영역 → NDJSON 스트림으로 진행률 표시 → 리포트 화면
-- **비교 분석**: URL A/B + **동일한 우선순위 설정**으로 각각 동일 API 파이프라인 실행 → 요약 지표 나란히 표시 → 필요 시 A/B 각각 전체 리포트로 이동. 전반 우세는 **개선 항목 개수만**이 아니라 `dashboard` 규칙 기반 카드(로컬 포함 시 보안 카드 제외)·품질·AEO·이슈 부담을 섞은 **복합 점수**를 우선하며, 동률일 때만 이슈 수·높은 우선·AEO 순으로 보조 판단합니다(`compareEffectiveCompositeWinner`).
+- **관심 영역(우선순위)**: 아무것도 고르지 않으면 대시보드 **기본 가중**(성능·접근성·AEO 등)으로 전체 점수를 냅니다. **최대 3개를 고르면** 해당 축(SEO·성능·접근성·모범사례·Security·마크업·AEO/GEO)이 **등급 산정에서 가장 높은 비중**을 갖도록 가중치를 조정하고, 개선안 목록에서도 **같은 영역 항목을 상단**에 둡니다(`resolveDashboardWeightsForPriorities`, `improvementMatchesUserFocus`).
+- **비교 분석**: URL A/B + **동일한 우선순위 설정**으로 각각 동일 API 파이프라인 실행 → 요약 지표 나란히 표시 → 필요 시 A/B 각각 전체 리포트로 이동. 전반 우세는 **개선 항목 개수만**이 아니라 `dashboard` 규칙 기반 **가중** 카드(로컬 포함 시 보안 카드 제외)·품질·이슈 부담을 섞은 **복합 점수**를 우선하며, 동률일 때만 이슈 수·높은 우선·AEO 순으로 보조 판단합니다(`compareEffectiveCompositeWinner`).
 - **결과 저장**: 브라우저 **IndexedDB**에 단일 리포트·비교 세션을 저장하고, 메뉴에서 다시 열기(다른 기기·브라우저에는 전송되지 않음)
-- **대시보드 등급**: AI가 아닌 **규칙 기반**(`computeDashboardGrades`)으로 Lighthouse·axe·HTTP 메타·aiseo 등을 점수화해 리포트에 포함
+- **대시보드 등급**: AI가 아닌 **규칙 기반**(`computeDashboardGrades`)으로 Lighthouse·axe·HTTP 메타·aiseo 등을 점수화해 리포트에 포함. **성능**은 Lighthouse Performance **한 카테고리**만 상단에 두고, 이미지·JS 세부 감사는 **성능 탭 개선안** 등에서만 반영합니다.
 
 ---
 
