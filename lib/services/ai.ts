@@ -14,7 +14,11 @@ import { formatCruxForPrompt } from '@/lib/services/crux'
 import { formatPageStatsForPrompt } from '@/lib/utils/page-stats'
 import { extractJsonLdSummary } from '@/lib/utils/json-ld-snippet'
 import { buildQualityAudit } from '@/lib/utils/quality-audit'
-import { buildSecurityAudit, deriveSecurityImprovementsFromAudit } from '@/lib/utils/security-audit'
+import {
+  buildSecurityAudit,
+  deriveSecurityImprovementsFromAudit,
+  type SecurityAudit,
+} from '@/lib/utils/security-audit'
 import { deriveMobileImprovements } from '@/lib/utils/mobile-audit'
 import { deriveAccessibilityImprovementsFromAudits } from '@/lib/utils/accessibility-improvements-fallback'
 import {
@@ -106,13 +110,14 @@ function geminiModelChain(): string[] {
 }
 
 // Gemini API 호출 헬퍼 함수 (주 모델 실패 시 폴백 모델 순차 시도)
-async function callGemini(prompt: string): Promise<string> {
+async function callGemini(prompt: string, opts?: { maxOutputTokens?: number }): Promise<string> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY가 설정되지 않았습니다.')
   }
 
   const chain = geminiModelChain()
   let lastError: unknown
+  const maxOutputTokens = opts?.maxOutputTokens ?? 4096
 
   for (let i = 0; i < chain.length; i++) {
     const modelId = chain[i]!
@@ -120,7 +125,7 @@ async function callGemini(prompt: string): Promise<string> {
       model: modelId,
       generationConfig: {
         temperature: LLM_CONFIG.temperature,
-        maxOutputTokens: 4096,
+        maxOutputTokens,
       },
     })
 
@@ -1025,15 +1030,780 @@ ${issues.join('\n')}
   return await callGemini(prompt)
 }
 
-/** 영문 권장문이 많을 때 설명을 한글 안내로 감싸기 위한 휴리스틱 */
-function aiseoRecLooksMostlyEnglish(text: string): boolean {
-  const letters = text.replace(/\s/g, '')
-  if (letters.length < 10) return false
-  let latin = 0
-  for (const ch of letters) {
-    if (/[A-Za-z]/.test(ch)) latin++
+const AISEO_TRANSLATE_CHUNK = 8
+
+function stripGeminiJsonFence(raw: string): string {
+  let t = raw.trim()
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json)?\s*/i, '')
+    const end = t.lastIndexOf('```')
+    if (end >= 0) t = t.slice(0, end)
   }
-  return latin / letters.length > 0.55
+  return t.trim()
+}
+
+/**
+ * aiseo-audit UI 문자열을 한국어로 직역 (의견·해설 추가 없음). 실패 시 null.
+ */
+async function translateStringsToKoreanStrict(lines: readonly string[]): Promise<string[] | null> {
+  if (lines.length === 0) return []
+  if (!process.env.GEMINI_API_KEY) return null
+
+  const out: string[] = []
+  for (let offset = 0; offset < lines.length; offset += AISEO_TRANSLATE_CHUNK) {
+    const chunk = lines.slice(offset, offset + AISEO_TRANSLATE_CHUNK)
+    const prompt = `아래 JSON의 items는 웹 감사 도구(aiseo-audit)가 출력한 짧은 문장·라벨입니다.
+
+작업: 각 문자열을 한국어로 **직역**합니다.
+- 원문에 없는 의견·요약·추가 설명을 넣지 마세요.
+- 고유명사·파일명(llms.txt 등)·URL·숫자·퍼센트는 가능하면 유지하고, 필요하면 괄호에 원문을 병기할 수 있습니다.
+- 이미 한국어(한글 비중이 높음)인 항목은 그대로 둡니다.
+
+응답: JSON만 출력합니다(마크다운 금지). 입력과 동일한 개수·순서:
+{"items":["…","…"]}
+
+입력:
+${JSON.stringify({ items: chunk })}`
+
+    try {
+      const raw = await callGemini(prompt)
+      const parsed = JSON.parse(stripGeminiJsonFence(raw)) as { items?: unknown }
+      const arr = parsed.items
+      if (!Array.isArray(arr) || arr.length !== chunk.length) return null
+      for (let i = 0; i < chunk.length; i++) {
+        out.push(String(arr[i] ?? ''))
+      }
+    } catch {
+      return null
+    }
+  }
+  return out
+}
+
+function sliceAiseoKoTitle(full: string): string {
+  const t = full.trim()
+  if (t.length <= 92) return t
+  const sp = t.lastIndexOf(' ', 90)
+  return (sp > 35 ? t.slice(0, sp) : t.slice(0, 88).trimEnd()) + '…'
+}
+
+function stripAiseoInternalFields(items: any[]): any[] {
+  return items.map((it) => {
+    if (!it || typeof it !== 'object') return it
+    const { __rawAiseoRec, ...rest } = it as Record<string, unknown>
+    return rest
+  })
+}
+
+async function applyAiseoRecFallbackDegradedTranslationForIndices(
+  items: any[],
+  globalIndices: number[]
+): Promise<void> {
+  if (!globalIndices.length) return
+  const raws = globalIndices.map((g) => String(items[g]?.__rawAiseoRec ?? ''))
+  const translated = await translateStringsToKoreanStrict(raws)
+  if (!translated) return
+  globalIndices.forEach((g, j) => {
+    const ko = translated[j]?.trim()
+    if (!ko) return
+    items[g] = {
+      ...items[g],
+      title: sliceAiseoKoTitle(ko),
+      description: ko,
+      requirementRelevance:
+        'AI 검색·인용 준비도(aiseo-audit) 분석 권장과 연결되어, 검색·인용 노출 개선에 기여할 수 있는 항목입니다.',
+      priorityReason:
+        items[g].priority === 'high'
+          ? 'aiseo 권장 중 상대적으로 먼저 검토할 만한 우선순위로 분류되었습니다.'
+          : 'aiseo 권장 범위에서 순차적으로 적용을 검토할 항목입니다.',
+    }
+    delete (items[g] as any).__rawAiseoRec
+  })
+}
+
+/** LLM 실패 시: 권장 원문 직역 + 단순 근거 문구 */
+async function applyAiseoRecFallbackDegradedTranslation(items: any[]): Promise<any[]> {
+  const indices: number[] = []
+  items.forEach((it, idx) => {
+    if (it && typeof it.__rawAiseoRec === 'string' && it.__rawAiseoRec.trim()) {
+      indices.push(idx)
+    }
+  })
+  if (!indices.length) return items
+  const out = items.map((it) => ({ ...it }))
+  await applyAiseoRecFallbackDegradedTranslationForIndices(out, indices)
+  return out
+}
+
+const AISEO_REC_ENRICH_CHUNK = 4
+
+type AiseoRecEnrichRow = {
+  title: string
+  description: string
+  requirementRelevance: string
+  priorityReason: string
+}
+
+/**
+ * 권장 원문(__rawAiseoRec) 기반 폴백 항목에 대해 제목(한글)·개선안 본문·요구사항 연관·우선순위 근거를 LLM이 작성.
+ */
+async function enrichAiseoFallbackRecommendationsWithLlm(
+  items: any[],
+  aiseo: any,
+  userRequirement: string,
+  analyzedUrl?: string
+): Promise<any[]> {
+  const out = items.map((it) => ({ ...it }))
+  const batchMeta: { globalIndex: number }[] = []
+  out.forEach((it, idx) => {
+    if (it && typeof it.__rawAiseoRec === 'string' && it.__rawAiseoRec.trim()) {
+      batchMeta.push({ globalIndex: idx })
+    }
+  })
+  if (!batchMeta.length) return stripAiseoInternalFields(out)
+
+  if (!process.env.GEMINI_API_KEY) {
+    return stripAiseoInternalFields(await applyAiseoRecFallbackDegradedTranslation(out))
+  }
+
+  const aiseoBrief =
+    typeof aiseo?.overallScore === 'number' && Number.isFinite(aiseo.overallScore)
+      ? `전체 점수 ${Math.round(aiseo.overallScore)}, 등급 ${aiseo?.grade ?? '—'}`
+      : `등급 ${aiseo?.grade ?? '—'}`
+  let catBrief = ''
+  try {
+    const s = aiseo?.categories != null ? JSON.stringify(aiseo.categories) : ''
+    catBrief = s.length > 700 ? `${s.slice(0, 700)}…` : s
+  } catch {
+    catBrief = ''
+  }
+
+  for (let start = 0; start < batchMeta.length; start += AISEO_REC_ENRICH_CHUNK) {
+    const slice = batchMeta.slice(start, start + AISEO_REC_ENRICH_CHUNK)
+    const payload = slice.map(({ globalIndex }) => ({
+      rawAuditRecommendation: String(out[globalIndex].__rawAiseoRec),
+      priority: out[globalIndex].priority,
+      impact: out[globalIndex].impact,
+      source: out[globalIndex].source,
+    }))
+
+    try {
+      const prompt = `역할: AEO/GEO(AI 검색·답변·인용) 웹 품질 컨설턴트. 응답은 모두 한국어.
+
+분석 URL: ${(analyzedUrl || '').trim() || '—'}
+사용자 요구사항(참고, 없으면 AI 인용·검색 대비 관점으로 작성): ${(userRequirement || '').trim() || '—'}
+aiseo-audit 맥락: ${aiseoBrief}
+카테고리·점수 일부(JSON): ${catBrief || '—'}
+
+아래 items는 각각 aiseo-audit가 낸 **권장 원문(영어일 수 있음)** 입니다. 항목마다 다음을 작성하세요.
+
+- title: 원문이 말하는 조치를 요약한 **한글 제목**(약 25~55자). "권장 개선 1" 같은 번호·자리표시자 금지.
+- description: 원문을 그대로 인용하거나 "---" 로 붙이지 말 것. 이 사이트에 적용할 **구체적 수정·개선안**을 2~6문장으로(필요 시 문장형 예시만).
+- requirementRelevance: 사용자 요구사항·AI 검색·인용 노출과 **이 항목**이 어떻게 맞닿는지 **한 문장**.
+- priorityReason: 주어진 priority·impact·aiseo 맥락을 바탕으로 **왜 이 순위인지** 한두 문장.
+
+금지: "aiseo-audit가 제시한 권장입니다. 아래는 감사 도구의 원문이며" 같은 정형 안내 문, 원문 영어를 description 앞에 붙이기.
+
+출력: 마크다운 없이 JSON만. items 개수·순서는 입력과 동일.
+{"items":[{"title":"","description":"","requirementRelevance":"","priorityReason":""}]}
+
+입력:
+${JSON.stringify({ items: payload })}`
+
+      const raw = await callGemini(prompt, { maxOutputTokens: 8192 })
+      const parsed = JSON.parse(stripGeminiJsonFence(raw)) as { items?: AiseoRecEnrichRow[] }
+      const rows = parsed.items
+      if (!Array.isArray(rows) || rows.length !== payload.length) {
+        throw new Error('aiseo enrich: invalid items length')
+      }
+      for (let j = 0; j < slice.length; j++) {
+        const g = slice[j]!.globalIndex
+        const row = rows[j]!
+        const title = String(row?.title ?? '').trim()
+        const description = String(row?.description ?? '').trim()
+        const requirementRelevance = String(row?.requirementRelevance ?? '').trim()
+        const priorityReason = String(row?.priorityReason ?? '').trim()
+        out[g] = {
+          ...out[g],
+          title: title || out[g].title,
+          description,
+          requirementRelevance: requirementRelevance || out[g].requirementRelevance,
+          priorityReason: priorityReason || out[g].priorityReason,
+        }
+        delete (out[g] as any).__rawAiseoRec
+      }
+    } catch (e) {
+      console.warn('[aiseo] 권장 폴백 LLM 보강 실패 — 직역 폴백', e)
+      await applyAiseoRecFallbackDegradedTranslationForIndices(
+        out,
+        slice.map((s) => s.globalIndex)
+      )
+    }
+  }
+
+  return stripAiseoInternalFields(out)
+}
+
+const AXE_VIOLATION_ENRICH_CHUNK = 4
+
+function stripAxeInternalFields(items: any[]): any[] {
+  return items.map((it) => {
+    if (!it || typeof it !== 'object') return it
+    const { __axeViolationPayload, ...rest } = it as Record<string, unknown>
+    return rest
+  })
+}
+
+async function translateAxeFallbackDegradedForIndices(items: any[], globalIndices: number[]): Promise<void> {
+  if (!globalIndices.length) return
+  const titles: string[] = []
+  const descs: string[] = []
+  globalIndices.forEach((g) => {
+    const p = items[g]?.__axeViolationPayload as
+      | { helpEn?: string; descriptionEn?: string; impact?: string; nodesCount?: number }
+      | undefined
+    titles.push(String((p?.helpEn || items[g]?.title) ?? ''))
+    const body =
+      (p?.descriptionEn && String(p.descriptionEn).trim()) || String(items[g]?.description ?? '')
+    descs.push(body.slice(0, 3000))
+  })
+  const [titlesKo, descsKo] = await Promise.all([
+    translateStringsToKoreanStrict(titles),
+    translateStringsToKoreanStrict(descs),
+  ])
+  if (
+    !titlesKo ||
+    !descsKo ||
+    titlesKo.length !== titles.length ||
+    descsKo.length !== descs.length
+  ) {
+    return
+  }
+  globalIndices.forEach((g, j) => {
+    const p = items[g]?.__axeViolationPayload as
+      | { impact?: string; nodesCount?: number }
+      | undefined
+    const impact = String(p?.impact ?? '')
+    const nodes = typeof p?.nodesCount === 'number' ? p.nodesCount : 0
+    const t = titlesKo[j]?.trim()
+    const d = descsKo[j]?.trim()
+    items[g] = {
+      ...items[g],
+      ...(t ? { title: t } : {}),
+      ...(d ? { description: d } : {}),
+      requirementRelevance:
+        'axe-core 자동 감사에서 확인된 위반으로, 키보드·스크린 리더 사용자 경험과 직결될 수 있는 항목입니다.',
+      priorityReason: `axe 영향도는 ${impact}이며, 페이지 내 관련 요소는 약 ${nodes}곳입니다. 영향이 클수록 우선 조치하는 것이 좋습니다.`,
+    }
+    delete (items[g] as any).__axeViolationPayload
+  })
+}
+
+type AxeViolationEnrichRow = {
+  title: string
+  description: string
+  requirementRelevance: string
+  priorityReason: string
+}
+
+/**
+ * axe-core 위반 기반 폴백: 한글 제목·실무 개선안·요구사항 연관·우선순위 근거를 LLM이 작성.
+ */
+async function enrichAxeDerivedAccessibilityItemsWithLlm(
+  items: any[],
+  userRequirement: string,
+  analyzedUrl?: string
+): Promise<any[]> {
+  const out = items.map((it) => ({ ...it }))
+  const meta: { globalIndex: number }[] = []
+  out.forEach((it, idx) => {
+    if (it && it.__axeViolationPayload && typeof it.__axeViolationPayload === 'object') {
+      meta.push({ globalIndex: idx })
+    }
+  })
+  if (!meta.length) return stripAxeInternalFields(out)
+
+  if (!process.env.GEMINI_API_KEY) {
+    await translateAxeFallbackDegradedForIndices(
+      out,
+      meta.map((m) => m.globalIndex)
+    )
+    return stripAxeInternalFields(out)
+  }
+
+  for (let start = 0; start < meta.length; start += AXE_VIOLATION_ENRICH_CHUNK) {
+    const slice = meta.slice(start, start + AXE_VIOLATION_ENRICH_CHUNK)
+    const payload = slice.map(({ globalIndex }) => {
+      const p = out[globalIndex].__axeViolationPayload as {
+        ruleId: string
+        helpEn: string
+        descriptionEn: string
+        impact: string
+        nodesCount: number
+      }
+      return {
+        ruleId: p.ruleId,
+        helpEn: p.helpEn,
+        descriptionEn: p.descriptionEn,
+        axeImpact: p.impact,
+        nodesCount: p.nodesCount,
+        priority: out[globalIndex].priority,
+        impactLabel: out[globalIndex].impact,
+      }
+    })
+
+    try {
+      const prompt = `역할: 웹 접근성(WCAG·ARIA·키보드·스크린 리더) 컨설턴트. 응답 필드는 모두 **한국어**로만 작성합니다.
+
+분석 URL: ${(analyzedUrl || '').trim() || '—'}
+사용자 요구사항(참고, 없으면 접근성·포용·법규 대비 관점): ${(userRequirement || '').trim() || '—'}
+
+아래 items는 **axe-core 자동 감사 위반**입니다. 항목마다 다음을 작성하세요.
+
+- title: 규칙 취지를 담은 **한글 제목**(약 28~60자). 영어 help 문장을 그대로 번역만 하지 말고, 개발·콘텐츠 담당자가 이해하기 쉬운 실무 표현으로.
+- description: 영어 설명을 **복사하지 말 것**. 이 페이지에서 할 수 있는 **구체적 수정·점검 절차**를 4~8문장으로(마크업·ARIA·포커스·대체 텍스트 등). 필요하면 짧은 예시를 문장으로. ruleId·axeImpact·nodesCount를 맥락에 반영.
+- requirementRelevance: 사용자 요구사항과 이 **접근성 이슈**가 어떻게 맞닿는지 한 문장(없으면 사용자 평등·법적 접근성·브랜드 신뢰 관점 한 문장).
+- priorityReason: 주어진 priority·axe 영향도·노드 수를 근거로 **왜 이 순위로 다뤄야 하는지** 한두 문장.
+
+금지: 마크다운, 원문 영어 단락 그대로 붙이기, 사실이 아닌 위반 내용 지어내기.
+
+출력: JSON만, items 개수·순서는 입력과 동일.
+{"items":[{"title":"","description":"","requirementRelevance":"","priorityReason":""}]}
+
+입력:
+${JSON.stringify({ items: payload })}`
+
+      const raw = await callGemini(prompt, { maxOutputTokens: 8192 })
+      const parsed = JSON.parse(stripGeminiJsonFence(raw)) as { items?: AxeViolationEnrichRow[] }
+      const rows = parsed.items
+      if (!Array.isArray(rows) || rows.length !== payload.length) {
+        throw new Error('axe enrich: invalid items length')
+      }
+      for (let j = 0; j < slice.length; j++) {
+        const g = slice[j]!.globalIndex
+        const row = rows[j]!
+        const title = String(row?.title ?? '').trim()
+        const description = String(row?.description ?? '').trim()
+        const requirementRelevance = String(row?.requirementRelevance ?? '').trim()
+        const priorityReason = String(row?.priorityReason ?? '').trim()
+        out[g] = {
+          ...out[g],
+          title: title || out[g].title,
+          description,
+          requirementRelevance: requirementRelevance || out[g].requirementRelevance,
+          priorityReason: priorityReason || out[g].priorityReason,
+        }
+        delete (out[g] as any).__axeViolationPayload
+      }
+    } catch (e) {
+      console.warn('[axe] 접근성 폴백 LLM 보강 실패 — 직역 폴백', e)
+      await translateAxeFallbackDegradedForIndices(
+        out,
+        slice.map((s) => s.globalIndex)
+      )
+    }
+  }
+
+  return stripAxeInternalFields(out)
+}
+
+const LH_AUDIT_ENRICH_CHUNK = 4
+
+function stripLhInternalFields(items: any[]): any[] {
+  return items.map((it) => {
+    if (!it || typeof it !== 'object') return it
+    const { __lhAuditPayload, ...rest } = it as Record<string, unknown>
+    return rest
+  })
+}
+
+async function translateLhAuditFallbackDegradedForIndices(items: any[], globalIndices: number[]): Promise<void> {
+  if (!globalIndices.length) return
+  const titles: string[] = []
+  const descs: string[] = []
+  globalIndices.forEach((g) => {
+    const p = items[g]?.__lhAuditPayload as
+      | { titleEn?: string; descriptionEn?: string; displayValue?: string; score?: number | null }
+      | undefined
+    titles.push(String(p?.titleEn ?? items[g]?.title ?? ''))
+    const body =
+      (p?.descriptionEn && String(p.descriptionEn).trim()) || String(items[g]?.description ?? '')
+    descs.push(body.slice(0, 3000))
+  })
+  const [titlesKo, descsKo] = await Promise.all([
+    translateStringsToKoreanStrict(titles),
+    translateStringsToKoreanStrict(descs),
+  ])
+  if (
+    !titlesKo ||
+    !descsKo ||
+    titlesKo.length !== titles.length ||
+    descsKo.length !== descs.length
+  ) {
+    return
+  }
+  globalIndices.forEach((g, j) => {
+    const p = items[g]?.__lhAuditPayload as { score?: number | null; reportCategory?: string } | undefined
+    const pct = p?.score != null ? Math.round(Number(p.score) * 100) : null
+    const t = titlesKo[j]?.trim()
+    const d = descsKo[j]?.trim()
+    const isBp = p?.reportCategory === '모범사례'
+    items[g] = {
+      ...items[g],
+      ...(t ? { title: t } : {}),
+      ...(d ? { description: d } : {}),
+      requirementRelevance: isBp
+        ? 'Lighthouse 모범 사례·PWA 감사 근거에 따른 항목으로, 보안·신뢰·브라우저 권고 이슈와 연결될 수 있습니다.'
+        : `Lighthouse ${p?.reportCategory ?? '성능'} 자동 감사 근거에 따른 항목입니다.`,
+      priorityReason: isBp
+        ? pct != null
+          ? `감사 점수가 ${pct}/100으로 낮아 HTTPS·헤더·신뢰성·최신 웹 관행 측면에서 검토할 가치가 있습니다.`
+          : 'Lighthouse 모범 사례 감사에서 개선이 필요한 항목입니다.'
+        : pct != null
+          ? `감사 점수가 ${pct}/100으로 낮아 사용자 체감 속도·안정성에 영향을 줄 수 있어 우선 검토 대상입니다.`
+          : 'Lighthouse 감사에서 개선이 필요한 항목입니다.',
+    }
+    delete (items[g] as any).__lhAuditPayload
+  })
+}
+
+type LhAuditEnrichRow = {
+  title: string
+  description: string
+  requirementRelevance: string
+  priorityReason: string
+}
+
+/**
+ * Lighthouse 실패 감사 기반 폴백(성능·모범사례): 한글 제목·실무 개선안·요구사항 연관·우선순위 근거를 LLM이 작성.
+ */
+async function enrichLighthouseAuditFallbackItemsWithLlm(
+  items: any[],
+  userRequirement: string,
+  analyzedUrl?: string
+): Promise<any[]> {
+  const out = items.map((it) => ({ ...it }))
+  const meta: { globalIndex: number }[] = []
+  out.forEach((it, idx) => {
+    if (it && it.__lhAuditPayload && typeof it.__lhAuditPayload === 'object') {
+      meta.push({ globalIndex: idx })
+    }
+  })
+  if (!meta.length) return stripLhInternalFields(out)
+
+  if (!process.env.GEMINI_API_KEY) {
+    await translateLhAuditFallbackDegradedForIndices(
+      out,
+      meta.map((m) => m.globalIndex)
+    )
+    return stripLhInternalFields(out)
+  }
+
+  for (let start = 0; start < meta.length; start += LH_AUDIT_ENRICH_CHUNK) {
+    const slice = meta.slice(start, start + LH_AUDIT_ENRICH_CHUNK)
+    const payload = slice.map(({ globalIndex }) => {
+      const p = out[globalIndex].__lhAuditPayload as {
+        auditId: string
+        titleEn: string
+        descriptionEn: string
+        displayValue: string
+        score: number | null
+        reportCategory: string
+      }
+      return {
+        auditId: p.auditId,
+        titleEn: p.titleEn,
+        descriptionEn: p.descriptionEn,
+        displayValue: p.displayValue,
+        auditScorePct: p.score != null ? Math.round(p.score * 100) : null,
+        priority: out[globalIndex].priority,
+        impact: out[globalIndex].impact,
+        reportCategory: p.reportCategory,
+      }
+    })
+
+    try {
+      const mode =
+        payload.length > 0 && payload.every((p) => p.reportCategory === '모범사례')
+          ? ('bestPractices' as const)
+          : ('performance' as const)
+      const prompt =
+        mode === 'bestPractices'
+          ? `역할: 웹 보안·신뢰·모범 사례(HTTPS, 헤더, 서드파티, PWA·설치 가능성 등) 컨설턴트. 응답 필드는 모두 **한국어**로만 작성합니다.
+
+분석 URL: ${(analyzedUrl || '').trim() || '—'}
+사용자 요구사항(참고, 없으면 보안·신뢰·유지보수·브라우저 권고 관점): ${(userRequirement || '').trim() || '—'}
+
+아래 items는 Lighthouse **모범 사례(best-practices)·PWA** 카테고리의 실패 감사입니다. 항목마다 다음을 작성하세요.
+
+- title: 감사 취지를 담은 **한글 제목**(약 28~60자). 영어 제목을 직역만 하지 말고, 개발·운영 담당자가 이해하기 쉬운 실무 표현으로.
+- description: 영어 원문을 **복사하지 말 것**. 이 사이트에 적용할 **구체적 개선 방안** 4~8문장(HTTPS·CSP·COOP·서드파티·매니페스트·서비스워커·메타 등 해당 감사에 맞게). 표시값(displayValue)·감사 점수(auditScorePct)가 있으면 맥락에 반드시 녹이기.
+- requirementRelevance: 사용자 요구사항과 이 **모범 사례 이슈**가 어떻게 맞닿는지 한 문장(없으면 보안·신뢰·호환성 관점 한 문장).
+- priorityReason: 주어진 priority·impact·감사 점수를 근거로 **왜 이 순위로 다뤄야 하는지** 한두 문장.
+
+금지: 마크다운, [Learn how to…] 같은 원문 링크 문구 복사, 존재하지 않는 수치 지어내기.
+
+출력: JSON만, items 개수·순서는 입력과 동일.
+{"items":[{"title":"","description":"","requirementRelevance":"","priorityReason":""}]}
+
+입력:
+${JSON.stringify({ items: payload })}`
+          : `역할: 웹 성능·품질 컨설턴트. 응답 필드는 모두 **한국어**로만 작성합니다.
+
+분석 URL: ${(analyzedUrl || '').trim() || '—'}
+사용자 요구사항(참고, 없으면 체감 속도·전환·사용자 경험 관점): ${(userRequirement || '').trim() || '—'}
+
+아래 items는 Lighthouse **성능(performance)** 카테고리 실패 감사입니다. 항목마다 다음을 작성하세요.
+
+- title: 감사 취지를 담은 **한글 제목**(약 28~60자). 영어 제목을 그대로 번역만 하지 말고, 개발자가 이해하기 쉬운 실무 표현으로.
+- description: 영어 설명·원문 문단을 **복사하지 말 것**. 이 사이트에 적용할 **구체적 개선 방안** 4~8문장. 필요하면 문장형으로 짧은 예시(예: 어떤 리소스를 어떻게 줄일지). 표시값(displayValue)·감사 점수(auditScorePct)가 있으면 반드시 맥락에 녹이기.
+- requirementRelevance: 사용자 요구사항과 이 **성능 이슈**가 어떻게 연결되는지 한 문장(요구사항이 없으면 로딩·UX·전환·신뢰 관점 한 문장).
+- priorityReason: 주어진 priority·impact·감사 점수를 근거로 **왜 이 순위로 다뤄야 하는지** 한두 문장.
+
+금지: 마크다운, [Learn how to…] 같은 원문 링크 문구 복사, 존재하지 않는 수치 지어내기.
+
+출력: JSON만, items 개수·순서는 입력과 동일.
+{"items":[{"title":"","description":"","requirementRelevance":"","priorityReason":""}]}
+
+입력:
+${JSON.stringify({ items: payload })}`
+
+      const raw = await callGemini(prompt, { maxOutputTokens: 8192 })
+      const parsed = JSON.parse(stripGeminiJsonFence(raw)) as { items?: LhAuditEnrichRow[] }
+      const rows = parsed.items
+      if (!Array.isArray(rows) || rows.length !== payload.length) {
+        throw new Error('lighthouse enrich: invalid items length')
+      }
+      for (let j = 0; j < slice.length; j++) {
+        const g = slice[j]!.globalIndex
+        const row = rows[j]!
+        const title = String(row?.title ?? '').trim()
+        const description = String(row?.description ?? '').trim()
+        const requirementRelevance = String(row?.requirementRelevance ?? '').trim()
+        const priorityReason = String(row?.priorityReason ?? '').trim()
+        out[g] = {
+          ...out[g],
+          title: title || out[g].title,
+          description,
+          requirementRelevance: requirementRelevance || out[g].requirementRelevance,
+          priorityReason: priorityReason || out[g].priorityReason,
+        }
+        delete (out[g] as any).__lhAuditPayload
+      }
+    } catch (e) {
+      console.warn('[lighthouse] 감사 폴백 LLM 보강 실패 — 직역 폴백', e)
+      await translateLhAuditFallbackDegradedForIndices(
+        out,
+        slice.map((s) => s.globalIndex)
+      )
+    }
+  }
+
+  return stripLhInternalFields(out)
+}
+
+const SECURITY_ENRICH_CHUNK = 4
+
+function stripSecurityInternalFields(items: any[]): any[] {
+  return items.map((it) => {
+    if (!it || typeof it !== 'object') return it
+    const { __securityPayload, ...rest } = it as Record<string, unknown>
+    return rest
+  })
+}
+
+function briefSecuritySignalsForPrompt(audit: SecurityAudit): string {
+  try {
+    const s = audit.signals
+    const bits: string[] = []
+    if (s.isHttps === false) bits.push('최초 응답이 HTTPS가 아님')
+    else if (s.isHttps) bits.push('HTTPS')
+    if (s.headersMissing?.length) {
+      bits.push(`누락 헤더 예: ${s.headersMissing.slice(0, 8).join(', ')}`)
+    }
+    if (typeof s.thirdPartyScriptCount === 'number') {
+      bits.push(`서드파티 스크립트 약 ${s.thirdPartyScriptCount}건`)
+    }
+    return bits.join(' | ').slice(0, 600)
+  } catch {
+    return ''
+  }
+}
+
+type SecurityEnrichRow = {
+  title: string
+  description: string
+  requirementRelevance: string
+  priorityReason: string
+}
+
+async function enrichSecurityDegradedForIndices(items: any[], globalIndices: number[]): Promise<void> {
+  if (!globalIndices.length) return
+  globalIndices.forEach((g) => {
+    const p = items[g]?.__securityPayload as
+      | { issueId?: string; severity?: string }
+      | undefined
+    const sev = String(p?.severity ?? '')
+    const id = String(p?.issueId ?? '')
+    items[g] = {
+      ...items[g],
+      requirementRelevance: `규칙 기반 보안 점검(security-audit)에서 "${id}" 유형이 확인되었으며, 서비스 신뢰·규정 준수·사고 예방 관점에서 검토할 만한 항목입니다.`,
+      priorityReason:
+        sev === 'high'
+          ? '심각도가 높아 노출·데이터 무결성에 큰 영향을 줄 수 있어 우선 조치하는 것이 좋습니다.'
+          : sev === 'medium'
+            ? '중간 심각도로, 배포 일정에 맞춰 조기에 완화하는 것을 권장합니다.'
+            : '상대적으로 낮은 우선순위지만 장기적으로는 정리해 두는 것이 안전합니다.',
+    }
+    delete (items[g] as any).__securityPayload
+  })
+}
+
+async function enrichSecurityImprovementsWithLlm(
+  items: any[],
+  userRequirement: string,
+  analyzedUrl: string | undefined,
+  audit: SecurityAudit
+): Promise<any[]> {
+  const out = items.map((it) => ({ ...it }))
+  const meta: { globalIndex: number }[] = []
+  out.forEach((it, idx) => {
+    if (it && it.__securityPayload && typeof it.__securityPayload === 'object') {
+      meta.push({ globalIndex: idx })
+    }
+  })
+  if (!meta.length) return stripSecurityInternalFields(out)
+
+  if (!process.env.GEMINI_API_KEY) {
+    await enrichSecurityDegradedForIndices(
+      out,
+      meta.map((m) => m.globalIndex)
+    )
+    return stripSecurityInternalFields(out)
+  }
+
+  const sigBrief = briefSecuritySignalsForPrompt(audit)
+  const scoreBrief = audit.score100 != null ? `종합 점수(0~100): ${audit.score100}` : ''
+
+  for (let start = 0; start < meta.length; start += SECURITY_ENRICH_CHUNK) {
+    const slice = meta.slice(start, start + SECURITY_ENRICH_CHUNK)
+    const payload = slice.map(({ globalIndex }) => {
+      const p = out[globalIndex].__securityPayload as {
+        issueId: string
+        title: string
+        recommendation: string
+        evidence?: string
+        severity: string
+      }
+      return {
+        issueId: p.issueId,
+        titleKoExisting: p.title,
+        recommendationKoExisting: p.recommendation,
+        evidence: p.evidence ?? '',
+        severity: p.severity,
+        priority: out[globalIndex].priority,
+        impactLabel: out[globalIndex].impact,
+      }
+    })
+
+    try {
+      const prompt = `역할: 웹·앱 보안 아키텍트. 응답 필드는 모두 **한국어**로만 작성합니다.
+
+분석 URL: ${(analyzedUrl || '').trim() || '—'}
+사용자 요구사항(참고): ${(userRequirement || '').trim() || '—'}
+${scoreBrief}
+페이지·응답 신호 요약: ${sigBrief || '—'}
+
+아래 items는 **규칙 기반 security-audit**가 포착한 이슈입니다. 각 항목에 대해:
+
+- title: 한글 제목. 기존 titleKoExisting을 **유지하거나** 더 명확하게 한 줄로 다듬기(40자 전후).
+- description: 기존 recommendation·evidence를 **반드시 반영**하되, 동일 문장만 반복하지 말 것. **추가로** 구체적 **조치 단계**(어디에 무엇을 설정하는지)와 **실행 예시**(예: 리버스 프록시/CDN/애플리케이션에서의 보안 헤더 설정 예, CSP 지시어 예시 등 이슈에 맞게)를 넣어 6~12문장으로 작성. 마크다운 금지.
+- requirementRelevance: 사용자 요구사항과 이 **보안 이슈**가 어떻게 맞닿는지 한 문장(없으면 신뢰·규제·사고 예방 관점 한 문장).
+- priorityReason: severity·priority·이슈 성격을 근거로 왜 이 순위인지 한두 문장.
+
+금지: 존재하지 않는 취약점 지어내기, evidence에 없는 사실 단정.
+
+출력: JSON만, items 개수·순서 동일.
+{"items":[{"title":"","description":"","requirementRelevance":"","priorityReason":""}]}
+
+입력:
+${JSON.stringify({ items: payload })}`
+
+      const raw = await callGemini(prompt, { maxOutputTokens: 8192 })
+      const parsed = JSON.parse(stripGeminiJsonFence(raw)) as { items?: SecurityEnrichRow[] }
+      const rows = parsed.items
+      if (!Array.isArray(rows) || rows.length !== payload.length) {
+        throw new Error('security enrich: invalid items length')
+      }
+      for (let j = 0; j < slice.length; j++) {
+        const g = slice[j]!.globalIndex
+        const row = rows[j]!
+        const title = String(row?.title ?? '').trim()
+        const description = String(row?.description ?? '').trim()
+        const requirementRelevance = String(row?.requirementRelevance ?? '').trim()
+        const priorityReason = String(row?.priorityReason ?? '').trim()
+        out[g] = {
+          ...out[g],
+          title: title || out[g].title,
+          description,
+          requirementRelevance: requirementRelevance || out[g].requirementRelevance,
+          priorityReason: priorityReason || out[g].priorityReason,
+        }
+        delete (out[g] as any).__securityPayload
+      }
+    } catch (e) {
+      console.warn('[security] 보안 카드 LLM 보강 실패 — 요약 폴백', e)
+      await enrichSecurityDegradedForIndices(
+        out,
+        slice.map((s) => s.globalIndex)
+      )
+    }
+  }
+
+  return stripSecurityInternalFields(out)
+}
+
+async function translateAiseoAuditForReport(
+  recs: string[],
+  categoriesArray: Array<{ id: string; name?: string; score?: number }>
+): Promise<{ recs: string[]; categories: typeof categoriesArray } | null> {
+  let recsKo = recs
+  if (recs.length) {
+    const t = await translateStringsToKoreanStrict(recs)
+    if (!t || t.length !== recs.length) return null
+    recsKo = t
+  }
+
+  const nameByIndex = categoriesArray.map((c) =>
+    c.name != null && String(c.name).trim() !== '' ? String(c.name) : ''
+  )
+  const nameIdx: number[] = []
+  const nameOnly: string[] = []
+  nameByIndex.forEach((s, i) => {
+    if (s) {
+      nameIdx.push(i)
+      nameOnly.push(s)
+    }
+  })
+  let mergedNames: string[] | null = null
+  if (nameOnly.length) {
+    const t = await translateStringsToKoreanStrict(nameOnly)
+    if (!t || t.length !== nameOnly.length) return null
+    mergedNames = [...nameByIndex]
+    nameIdx.forEach((origI, j) => {
+      mergedNames![origI] = t[j] ?? ''
+    })
+  }
+
+  const categories =
+    mergedNames == null
+      ? categoriesArray
+      : categoriesArray.map((c, i) => {
+          const n = mergedNames![i]
+          return n && String(n).trim() !== '' ? { ...c, name: n } : c
+        })
+
+  return { recs: recsKo, categories }
 }
 
 /**
@@ -1055,28 +1825,20 @@ function deriveAiseoImprovementsFallback(aiseo: any): any[] {
   }
 
   recTexts.slice(0, 12).forEach((text, i) => {
-    const englishHeavy = aiseoRecLooksMostlyEnglish(text)
-    const title = englishHeavy
-      ? `권장 개선 ${i + 1} (aiseo-audit)`
-      : text.length > 80
-        ? `${text.slice(0, 77).trimEnd()}…`
-        : text
-    const description = englishHeavy
-      ? `aiseo-audit가 제시한 권장입니다. 아래는 감사 도구의 원문이며, 페이지·메타에 반영할지 검토하세요.\n\n---\n${text}`
-      : text
     out.push({
-      title,
+      title: `권장 개선 ${i + 1} (aiseo-audit)`,
       category: 'AEO/GEO',
       priority: i === 0 ? 'high' : 'medium',
       impact: i === 0 ? '높음' : '중간',
       difficulty: '보통',
       scope: 'global',
-      description,
+      description: '',
       codeExample: '',
       source: `aiseo-audit · 권장 ${i + 1}`,
       matchesRequirement: false,
-      requirementRelevance: 'AI 검색·인용 준비도(aiseo-audit) 권장 항목',
-      priorityReason: `aiseo-audit 권장 개선사항 ${i + 1}번`,
+      requirementRelevance: '',
+      priorityReason: '',
+      __rawAiseoRec: text,
     })
   })
 
@@ -1186,7 +1948,12 @@ export async function generateReport(
       if ((!aeoList || aeoList.length === 0) && analysisResults.aiseo) {
         const fallback = deriveAiseoImprovementsFallback(analysisResults.aiseo)
         if (fallback.length > 0) {
-          categoryResults[aeoIdx] = fallback
+          categoryResults[aeoIdx] = await enrichAiseoFallbackRecommendationsWithLlm(
+            fallback,
+            analysisResults.aiseo,
+            requirement,
+            analyzedUrl
+          )
         }
       }
     }
@@ -1197,7 +1964,11 @@ export async function generateReport(
       if (!accList || accList.length === 0) {
         const fallback = deriveAccessibilityImprovementsFromAudits(analysisResults)
         if (fallback.length > 0) {
-          categoryResults[accIdx] = fallback
+          categoryResults[accIdx] = await enrichAxeDerivedAccessibilityItemsWithLlm(
+            fallback,
+            requirement,
+            analyzedUrl
+          )
         }
       }
     }
@@ -1208,7 +1979,11 @@ export async function generateReport(
       if (!perfList || perfList.length === 0) {
         const fallback = derivePerformanceImprovementsFromAudits(analysisResults)
         if (fallback.length > 0) {
-          categoryResults[perfIdx] = fallback
+          categoryResults[perfIdx] = await enrichLighthouseAuditFallbackItemsWithLlm(
+            fallback,
+            requirement,
+            analyzedUrl
+          )
         }
       }
     }
@@ -1219,7 +1994,11 @@ export async function generateReport(
       if (!bpList || bpList.length === 0) {
         const fallback = deriveBestPracticesImprovementsFromAudits(analysisResults)
         if (fallback.length > 0) {
-          categoryResults[bpIdx] = fallback
+          categoryResults[bpIdx] = await enrichLighthouseAuditFallbackItemsWithLlm(
+            fallback,
+            requirement,
+            analyzedUrl
+          )
         }
       }
     }
@@ -1268,7 +2047,10 @@ export async function generateReport(
           ? buildSecurityAudit({ analysisResults, analyzedUrl })
           : null
     if (securityAudit) {
-      allImprovements.push(...deriveSecurityImprovementsFromAudit(securityAudit))
+      const secItems = deriveSecurityImprovementsFromAudit(securityAudit)
+      allImprovements.push(
+        ...(await enrichSecurityImprovementsWithLlm(secItems, requirement, analyzedUrl, securityAudit))
+      )
     }
 
     // 모바일 대응(규칙 기반) — 별도 탭을 만들지 않고 기존 카테고리(주로 UX/UI)에 포함
@@ -1361,11 +2143,12 @@ export async function generateReport(
       const recs = (analysisResults.aiseo.recommendations || []).map((r: any) =>
         typeof r === 'string' ? r : (r?.recommendation ?? r?.text ?? String(r))
       )
+      const aiseoDisplay = await translateAiseoAuditForReport(recs, categoriesArray)
       parsed.aiseo = {
         overallScore: analysisResults.aiseo.overallScore,
         grade: analysisResults.aiseo.grade,
-        categories: categoriesArray,
-        recommendations: recs,
+        categories: aiseoDisplay?.categories ?? categoriesArray,
+        recommendations: aiseoDisplay?.recs ?? recs,
       }
     }
     return parsed

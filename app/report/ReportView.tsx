@@ -782,54 +782,24 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         >
           {activeTab === id && (
             <>
-              {id === 'AEO/GEO' && reportData.aiseo && (
-                <section className={styles.aiseoSection}>
-                  <h3>GEO/AEO (AI 검색·인용 준비도)</h3>
-                  <div className={styles.aiseoCards}>
-                    <div className={styles.aiseoCard}>
-                      <span className={styles.aiseoLabel}>전체 점수</span>
-                      <span className={styles.aiseoScore}>{reportData.aiseo.overallScore ?? '—'}</span>
-                    </div>
-                    <div className={styles.aiseoCard}>
-                      <span className={styles.aiseoLabel}>등급</span>
-                      <span className={styles.aiseoGrade}>{reportData.aiseo.grade ?? '—'}</span>
-                    </div>
-                  </div>
-                  {reportData.aiseo.categories && reportData.aiseo.categories.length > 0 && (
+              {id === 'AEO/GEO' &&
+                reportData.aiseo?.categories &&
+                reportData.aiseo.categories.length > 0 && (
+                  <section className={styles.aiseoSection} aria-label="GEO/AEO 카테고리별 점수">
+                    <h3>GEO/AEO (AI 검색·인용 준비도)</h3>
                     <div className={styles.aiseoCategories}>
                       <h4>카테고리별 점수</h4>
                       <div className={styles.aiseoChips}>
                         {reportData.aiseo.categories.map((cat: any, i: number) => (
                           <span key={i} className={styles.aiseoChip}>
-                            {cat.name ?? cat.id ?? `항목 ${i + 1}`}: {cat.score != null ? Math.round(Number(cat.score)) : '—'}
+                            {cat.name ?? cat.id ?? `항목 ${i + 1}`}:{' '}
+                            {cat.score != null ? Math.round(Number(cat.score)) : '—'}
                           </span>
                         ))}
                       </div>
                     </div>
-                  )}
-                  {reportData.aiseo.recommendations && reportData.aiseo.recommendations.length > 0 && (
-                    <div className={styles.aiseoRecs}>
-                      <h4>권장 개선사항 (상위)</h4>
-                      <p className={styles.aiseoRecsHint}>
-                        아래는 aiseo-audit가 반환한 원문이며 영어일 수 있습니다. 실행 가능한 한글 설명은 이 탭 아래
-                        「AEO/GEO 개선사항」카드를 우선 참고하세요.
-                      </p>
-                      <ul>
-                        {reportData.aiseo.recommendations.slice(0, 5).map((rec: string | { text?: string }, i: number) => (
-                          <li key={i}>{typeof rec === 'string' ? rec : (rec?.text ?? (rec as any)?.message ?? String(rec))}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </section>
-              )}
-              <section className={styles.verification}>
-                <h3>요구사항 대비 정합성</h3>
-                {requirement && <p className={styles.requirementBlock}>입력한 요구사항: “{requirement}”</p>}
-                <p className={styles.verificationText}>
-                  아래 {TAB_LABELS[id] ?? id} 개선사항은 입력하신 요구사항과의 정합성을 반영해 선별·정리되었습니다.
-                </p>
-              </section>
+                  </section>
+                )}
               <section className={styles.improvements}>
                 {(() => {
                   const items = getItemsForTab(id)
@@ -859,9 +829,6 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                         </p>
                       ) : useInsightTierUi ? (
                         <>
-                          <p className={styles.insightTierTabLead}>
-                            아래는 동일 분석 결과이며, 상단 등급과 직접 연동된 항목과 추가 권장을 나누어 표시합니다.
-                          </p>
                           {primaryItems.length > 0 && (
                             <div className={styles.insightTierBlock}>
                               <h3 className={styles.insightTierHeading}>핵심 개선 (등급·자동 점검과 연동)</h3>

@@ -31,6 +31,7 @@ export function deriveAccessibilityImprovementsFromAudits(analysisResults: Analy
       const title = titleBase.length > 110 ? `${titleBase.slice(0, 107)}…` : titleBase
       const nodes = Array.isArray(v.nodes) ? v.nodes.length : 0
       const pr = impactToPriority(impact)
+      const descriptionEnFull = (desc || '').slice(0, 2500)
       out.push({
         title,
         category: '접근성',
@@ -46,6 +47,14 @@ export function deriveAccessibilityImprovementsFromAudits(analysisResults: Analy
         matchesRequirement: false,
         requirementRelevance: '자동 접근성 감사(axe-core) 결과 기반',
         priorityReason: `axe 영향도 ${impact}, 노드 ${nodes}개`,
+        /** `generateReport`에서 LLM으로 한글·상세 필드 보강 후 제거 */
+        __axeViolationPayload: {
+          ruleId: id,
+          helpEn: help,
+          descriptionEn: descriptionEnFull,
+          impact,
+          nodesCount: nodes,
+        },
       })
     }
   }

@@ -325,6 +325,14 @@ export function deriveSecurityImprovementsFromAudit(audit: SecurityAudit): any[]
       matchesRequirement: false,
       requirementRelevance: '요구사항과 직접 연결되진 않지만 기본 보안 품질을 높입니다.',
       priorityReason: `security-audit: ${iss.severity}`,
+      /** `generateReport`에서 LLM으로 상세·예시 보강 후 제거 */
+      __securityPayload: {
+        issueId: iss.id,
+        title: iss.title,
+        recommendation: iss.recommendation,
+        evidence: iss.evidence,
+        severity: iss.severity,
+      },
     })
   }
   return out

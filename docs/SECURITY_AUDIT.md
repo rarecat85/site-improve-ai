@@ -123,13 +123,19 @@ Puppeteer로 `page.goto` 후, 초기 네비게이션 응답(gotoResponse)에서 
 
 로컬호스트에서는 생성하지 않습니다.
 
+### 6.1 Gemini 보강 (`enrichSecurityImprovementsWithLlm`)
+
+구현: `lib/services/ai.ts` (`generateReport` 내, `deriveSecurityImprovementsFromAudit` 직후)
+
+규칙으로 만든 항목에 **`__securityPayload`**(이슈 제목·근거·기존 권장 등)를 붙인 뒤, Gemini로 **`title`·`description`(예시·조치 단계 포함)·`requirementRelevance`·`priorityReason`** 을 한국어로 작성합니다. API 키가 없거나 호출이 실패하면 **규칙 단계에서 채운 필드**를 그대로 둡니다.
+
 ---
 
 ## 7. 구현 위치
 
 - 원천 수집: `lib/services/analyzer.ts` (`analysisResults.securitySignals`)
 - 규칙 기반 점검: `lib/utils/security-audit.ts`
-- 리포트 병합/탭 노출: `lib/services/ai.ts` (`generateReport`)
+- 리포트 병합·Gemini 보강·탭 노출: `lib/services/ai.ts` (`generateReport`)
 - 등급 반영: `lib/utils/grade-calculator.ts` (보안 카드에 securityAudit 점수 우선)
 - 등급 문서: `docs/GRADE_CRITERIA.md`
 

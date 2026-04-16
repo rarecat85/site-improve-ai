@@ -1,6 +1,6 @@
 # 리포트 항목별 탭 로직 (Overview 제외)
 
-`app/report/ReportView.tsx`에서 **Overview(`all`)가 아닌 탭**은 동일한 레이아웃으로 **개선 항목(`improvements`)** 을 필터해 보여주며, **AEO/GEO 탭만** 추가로 `aiseo` 감사 요약 블록을 띄웁니다.
+`app/report/ReportView.tsx`에서 **Overview(`all`)가 아닌 탭**은 동일한 레이아웃으로 **개선 항목(`improvements`)** 을 필터해 보여주며, **AEO/GEO 탭만** 추가로 `aiseo` 데이터가 있을 때 **카테고리별 점수 칩**(중복을 피하기 위해 전체 점수·등급·상위 권장 목록은 넣지 않음)을 띄웁니다.
 
 구현 기준: `ReportView`, `lib/services/ai.ts` (`generateReport`, `generateReportForCategory`), `lib/utils/analysis-summary.ts`.
 
@@ -16,7 +16,7 @@
 | `성능` | Performance | 성능 전담 개선안 |
 | `모범사례` | Best Practices | 모범사례 전담 개선안 |
 | `Security` | Security | **보안 점검(규칙 기반) + 개선안** |
-| `AEO/GEO` | AEO/GEO | AEO/GEO 전담 개선안 + **aiseo-audit 요약 카드** |
+| `AEO/GEO` | AEO/GEO | AEO/GEO 전담 개선안 + **`aiseo.categories`가 있을 때만** 카테고리 점수 칩 |
 | `기타` | Other | 표준 7개 카테고리에 속하지 않는 항목만 |
 
 탭 목록은 **해당 카테고리에 개선 건수가 있거나**, AEO/GEO의 경우 **`aiseo` 데이터가 있으면** 탭이 열립니다.  
@@ -36,9 +36,11 @@
 5. **추가(규칙 기반 파생 개선안)**:
    - `qualityAudit` 신호로부터 UX/UI 개선안을 일부 파생해 `improvements`에 추가할 수 있습니다.
    - `securityAudit` 신호로부터 Security 개선안을 파생해 `improvements`에 추가할 수 있습니다.
-6. **접근성 전담 AI가 빈 배열을 낸 뒤**: **axe-core 위반**을 건별로 요약한 개선안을 채우고, 위반이 없고 Lighthouse 접근성 카테고리 점수만 낮으면 **점수 보강** 항목 1건을 넣습니다(`deriveAccessibilityImprovementsFromAudits`, `lib/utils/accessibility-improvements-fallback.ts`). AEO/GEO의 `deriveAiseoImprovementsFallback`과 같은 성격입니다.
-7. **성능 전담 AI가 빈 배열을 낸 뒤**: `buildLighthouseSummary` + `filterLighthouseItemsByCategory(…, '성능')`로 실패 감사를 건별 개선안으로 채우고, 없으면 **Lighthouse performance 카테고리 점수**만으로 보강 1건(`derivePerformanceImprovementsFromAudits`, `lib/utils/lighthouse-category-improvements-fallback.ts`).
-8. **모범사례 전담 AI가 빈 배열을 낸 뒤**: 동일 파일에서 **모범 사례·PWA** 라벨 감사를 건별로 채우고, 없으면 **best-practices 카테고리 점수** 보강(`deriveBestPracticesImprovementsFromAudits`).
+6. **접근성 전담 AI가 빈 배열을 낸 뒤**: **axe-core 위반**을 건별로 요약한 개선안을 채우고, 위반이 없고 Lighthouse 접근성 카테고리 점수만 낮으면 **점수 보강** 항목 1건을 넣습니다(`deriveAccessibilityImprovementsFromAudits`, `lib/utils/accessibility-improvements-fallback.ts`, 내부 `__axeViolationPayload`). 이어서 **`enrichAxeDerivedAccessibilityItemsWithLlm`**(Gemini)으로 제목·본문·`requirementRelevance`·`priorityReason`을 한국어로 풍부하게 작성합니다(실패 시 직역·요약 폴백). AEO/GEO의 규칙 폴백과 같은 성격입니다.
+7. **성능 전담 AI가 빈 배열을 낸 뒤**: `buildLighthouseSummary` + `filterLighthouseItemsByCategory(…, '성능')`로 실패 감사를 건별 개선안으로 채우고, 없으면 **Lighthouse performance 카테고리 점수**만으로 보강 1건(`derivePerformanceImprovementsFromAudits`, `lib/utils/lighthouse-category-improvements-fallback.ts`, 내부 `__lhAuditPayload`). 이어서 **`enrichLighthouseAuditFallbackItemsWithLlm`**(성능 전용 프롬프트 분기)으로 동일 필드를 보강합니다.
+8. **모범사례 전담 AI가 빈 배열을 낸 뒤**: 동일 파일에서 **모범 사례·PWA** 라벨 감사를 건별로 채우고, 없으면 **best-practices 카테고리 점수** 보강(`deriveBestPracticesImprovementsFromAudits`, `__lhAuditPayload`) 후 **`enrichLighthouseAuditFallbackItemsWithLlm`**(모범사례 전용 프롬프트 분기)을 적용합니다.
+9. **AEO/GEO 전담 AI가 빈 배열을 낸 뒤**: `deriveAiseoImprovementsFallback`으로 규칙 항목을 채운 다음 **`enrichAiseoFallbackRecommendationsWithLlm`**으로 카드 필드를 보강합니다(Gemini 실패 시 직역 폴백).
+10. **Security 규칙 파생**: `deriveSecurityImprovementsFromAudit`(내부 `__securityPayload`) 후 **`enrichSecurityImprovementsWithLlm`**으로 제목·본문(예시·조치)·`requirementRelevance`·`priorityReason`을 보강합니다(로컬호스트는 §4.3과 같이 감사·항목 생략).
 
 ### 2.2 모든 카테고리 프롬프트에 공통으로 들어가는 컨텍스트 (`metaLines`)
 
@@ -102,7 +104,7 @@ AI가 내보내는 스키마(요약): `title`, `category`, `priority`, `impact`,
 공통 제약(프롬프트): **Lighthouse/axe/aiseo 목록에 없는 이슈를 지어내지 말 것**, `source`는 `Lighthouse · …`, `axe-core · …`, `aiseo-audit · …` 형태 권장.  
 반대로, **목록에 있는 이슈**에 대해서는 완벽한 해법·100% 검증을 요구하지 않고, **실무에서 시도할 만한 완화 조치**(과반 정도 신뢰 수준)를 제시해도 되도록 프롬프트를 완화해 빈 배열을 줄이는 방향(`getSharedReportQualityRules`, `getCategoryJsonRules`, 카테고리별 시스템 문단).
 
-**AEO/GEO 한국어 출력:** `buildAeoGeoCategoryPrompt`에 **출력 언어(필수)** 절, `getCategoryJsonRules`의 aiseo variant에 **`aeoKoreanOnly`** 블록이 있습니다. `formatAiseoSummaryForPrompt`는 데이터 블록 뒤에 **모델용 한 줄 지시**(원문에 영어가 있어도 최종 JSON은 한국어)를 붙입니다. Gemini 폴백 `deriveAiseoImprovementsFallback`은 권장문이 영어 위주일 때 제목을 한글로 두고 설명에 원문을 붙입니다.
+**AEO/GEO 한국어 출력:** `buildAeoGeoCategoryPrompt`에 **출력 언어(필수)** 절, `getCategoryJsonRules`의 aiseo variant에 **`aeoKoreanOnly`** 블록이 있습니다. `formatAiseoSummaryForPrompt`는 데이터 블록 뒤에 **모델용 한 줄 지시**(원문에 영어가 있어도 최종 JSON은 한국어)를 붙입니다. `generateReport` 저장 직전 **`translateStringsToKoreanStrict`**(Gemini, `GEMINI_API_KEY` 있을 때)로 `parsed.aiseo`의 **권장 문장·카테고리 라벨**을 한국어로 직역할 수 있으면 적용합니다. 전담 `improvements`가 비어 **규칙 폴백** `deriveAiseoImprovementsFallback`이 돌면 **`enrichAiseoFallbackRecommendationsWithLlm`**으로 제목·본문·`requirementRelevance`·`priorityReason`을 한국어로 작성합니다(실패 시 직역 폴백).
 
 ### 4.3 Security 탭(규칙 기반 보안 점검)
 
@@ -110,6 +112,7 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 
 - 보안 점검 문서: [SECURITY_AUDIT.md](./SECURITY_AUDIT.md)
 - 개선 항목 `source` 예: `security-audit · csp-missing`
+- `deriveSecurityImprovementsFromAudit` 직후 **`enrichSecurityImprovementsWithLlm`**으로 사용자 대면 필드를 보강합니다(예시·조치 단계·요구사항 연관·우선순위 근거).
 
 ### 4.2 로컬호스트(개발/스테이징) URL과 “본문 우선” 지침 (단일 페이지 `generateReport`)
 
@@ -128,15 +131,15 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 **AEO/GEO**
 
 - 전용 프롬프트(`buildAeoGeoCategoryPrompt`)와 aiseo 전용 JSON 규칙 variant로 Lighthouse 중심 지침과 분리합니다.
-- Gemini가 빈 `improvements`를 내거나 파싱에 실패하면, **aiseo 권장 문구·낮은 카테고리 점수**로 규칙 기반 항목을 채우는 폴백(`deriveAiseoImprovementsFallback`)이 있습니다.
+- Gemini가 빈 `improvements`를 내거나 파싱에 실패하면, **aiseo 권장 문구·낮은 카테고리 점수**로 규칙 기반 항목을 채우는 폴백(`deriveAiseoImprovementsFallback`) 뒤 **`enrichAiseoFallbackRecommendationsWithLlm`**을 적용합니다(위 **2.1** 항목 9).
 
 **접근성**
 
-- Claude 전담이 빈 배열이면 **axe → Lighthouse 접근성 카테고리** 순 규칙 폴백(`deriveAccessibilityImprovementsFromAudits`)이 있습니다(위 **2.1** 항목 6).
+- Claude 전담이 빈 배열이면 **axe → Lighthouse 접근성 카테고리** 순 규칙 폴백(`deriveAccessibilityImprovementsFromAudits`) 후 **`enrichAxeDerivedAccessibilityItemsWithLlm`**(위 **2.1** 항목 6).
 
 **성능 · 모범사례**
 
-- Claude 전담이 빈 배열이면 **Lighthouse 실패 감사 목록 → 카테고리 점수** 순 폴백(`derivePerformanceImprovementsFromAudits`, `deriveBestPracticesImprovementsFromAudits`)이 있습니다(위 **2.1** 항목 7~8).
+- Claude 전담이 빈 배열이면 **Lighthouse 실패 감사 목록 → 카테고리 점수** 순 폴백 후 **`enrichLighthouseAuditFallbackItemsWithLlm`**(위 **2.1** 항목 7~8).
 
 **보안(Security)**
 
@@ -153,19 +156,14 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 
 ### 5.1 SEO · 접근성 · UX/UI · 성능 · 모범사례 · 기타
 
-- **요구사항 대비 정합성** 문단: 사용자가 분석 시 넣은 `requirement`(우선순위 문구) 표시.
+- 사용자가 분석 시 넣은 **요구사항(`requirement`)** 은 리포트 상단 **우선순위(PRIORITIES)** 영역에서 확인합니다. 각 탭의 개선 카드에는 **「요구사항 대비 정합성」이라는 별도 문단**은 두지 않으며, **`요구사항 부합` 배지·`requirementRelevance`·`priorityReason`** 등으로 맥락을 전달합니다.
 - **개선사항 카드 목록**: `title`, 배지(`요구사항 부합`, `source`, 우선순위, 영향도, 난이도), `requirementRelevance`, `priorityReason`, `description`, `codeExample`.
 
 ### 5.2 AEO/GEO (추가 블록)
 
-같은 탭 상단에 **`reportData.aiseo`가 있을 때만**:
+**대시보드(Overview)** 에서 이미 **AEO/GEO 전체 점수·등급**을 보여 주므로, 같은 탭에서는 중복을 피합니다. **`reportData.aiseo`가 있고 `aiseo.categories`가 비어 있지 않을 때만** 탭 상단에 **카테고리별 점수 칩**을 띄웁니다. **상위 권장 목록**은 탭에 두지 않고, 권장 문구는 `generateReport`에서 **`translateStringsToKoreanStrict`**로 가능한 한 한국어로 맞춘 뒤 **`parsed.aiseo`** 에 저장됩니다.
 
-- **GEO/AEO** 제목 아래 **전체 점수·등급** 카드
-- **카테고리별 점수** 칩 (`aiseo.categories`)
-- **권장 개선사항** 상위 5개 (`aiseo.recommendations`) — 패키지 **원문 언어**(영어일 수 있음)로 표시될 수 있음
-- 그 위·아래에 **한글 안내**(`aiseoRecsHint`): 실행 설명은 아래 **개선사항 카드**(LLM·폴백)를 우선 참고하라는 문구
-
-이 부분은 **aiseo-audit 패키지**가 반환한 구조를 그대로 가공해 `generateReport`가 `parsed.aiseo`에 넣은 값입니다. 아래 **개선사항 리스트**는 원칙적으로 **Gemini가 `AEO/GEO` 전담으로 생성한 `improvements`**(프롬프트상 **한국어 사용자 대면 필드**)이며, 비어 있으면 **aiseo 데이터 기반 규칙 폴백**(`deriveAiseoImprovementsFallback`)으로 채워질 수 있습니다.
+아래 **개선사항 리스트**는 원칙적으로 **Gemini가 `AEO/GEO` 전담으로 생성한 `improvements`**(프롬프트상 **한국어 사용자 대면 필드**)이며, 비어 있으면 **aiseo 데이터 기반 규칙 폴백**(`deriveAiseoImprovementsFallback`) 후 **`enrichAiseoFallbackRecommendationsWithLlm`**으로 채워질 수 있습니다.
 
 ---
 
@@ -193,7 +191,7 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 |------|------|
 | `app/report/ReportView.tsx` | 탭 정의, `getImprovementCategory`로 항목 필터, AEO/GEO 전용 블록 |
 | `lib/utils/report-improvement-category.ts` | `CATEGORY_ORDER`, `getImprovementCategory` |
-| `lib/services/ai.ts` | `generateReport`, `generateReportForCategory`, `REPORT_CATEGORIES`, `CATEGORY_FOCUS`, `normalizeCategory` |
+| `lib/services/ai.ts` | `generateReport`, `generateReportForCategory`, `REPORT_CATEGORIES`, `CATEGORY_FOCUS`, `normalizeCategory`, 폴백 후 Gemini 보강(`translateStringsToKoreanStrict`, `enrichAiseoFallbackRecommendationsWithLlm`, `enrichAxeDerivedAccessibilityItemsWithLlm`, `enrichLighthouseAuditFallbackItemsWithLlm`, `enrichSecurityImprovementsWithLlm`) |
 | `lib/utils/analysis-summary.ts` | Lighthouse/axe/aiseo 프롬프트용 문자열 (`formatAiseoSummaryForPrompt` — AEO 블록 끝 **한국어 출력 지시**) |
 | `lib/utils/json-ld-snippet.ts` | SEO 프롬프트용 JSON-LD 요약 |
 | `lib/utils/grade-calculator.ts` | `formatResponseMetaForPrompt` 등 |
@@ -201,6 +199,7 @@ Security 탭의 개선안은 LLM 전담 카테고리가 아니라, 분석 결과
 | `lib/utils/compare-report-metrics.ts` | 비교 집계·`computeEffectiveCompareScore100`(복합 점수)·`compareEffectiveCompositeWinner`. 구 저장 리포트에서 개선안만 비고 대시보드만 나쁜 경우 **접근성·성능** 카테고리 건수·총 이슈 보정(`accessibilityLegacyFloorFromDashboard`, `performanceLegacyFloorFromDashboard`) |
 | `lib/utils/accessibility-improvements-fallback.ts` | 접근성 AI 미출력 시 axe·Lighthouse 근거 폴백 |
 | `lib/utils/lighthouse-category-improvements-fallback.ts` | 성능·모범사례 AI 미출력 시 Lighthouse 감사·카테고리 점수 폴백 |
+| `lib/utils/security-audit.ts` | `buildSecurityAudit`, `deriveSecurityImprovementsFromAudit`, `__securityPayload` — [SECURITY_AUDIT.md](./SECURITY_AUDIT.md) |
 
 코드와 문서가 다르면 **코드가 우선**입니다.
 

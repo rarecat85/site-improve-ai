@@ -659,14 +659,11 @@
   line-height: 1.5;
   color: var(--app-text-muted);
   margin: -1rem 0 1.75rem 0;
-  max-width: 52rem;
-}
-
-.insightTierTabLead {
-  font-size: 0.9rem;
-  color: var(--app-text-muted);
-  margin: 0 0 1rem 0;
-  line-height: 1.45;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .insightTierBlock {
@@ -707,46 +704,13 @@
 }
 
 .aiseoSection h4 {
-  margin: 0.75rem 0 0.5rem 0;
+  margin: 0 0 0.5rem 0;
   color: var(--app-text-secondary);
   font-size: 0.9rem;
 }
 
-.aiseoCards {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.aiseoCard {
-  display: flex;
-  flex-direction: column;
-  padding: 0.75rem 1rem;
-  background: var(--app-surface-muted);
-  border-radius: 8px;
-  min-width: 100px;
-}
-
-.aiseoLabel {
-  font-size: 0.8rem;
-  color: var(--app-text-muted);
-  margin-bottom: 0.25rem;
-}
-
-.aiseoScore {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--app-point);
-}
-
-.aiseoGrade {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--app-point);
-}
-
 .aiseoCategories {
-  margin-top: 1rem;
+  margin-top: 0;
 }
 
 .aiseoChips {
@@ -763,26 +727,6 @@
   background: var(--app-surface-muted);
   color: var(--app-point);
   border: 1px solid var(--app-border-mid);
-}
-
-.aiseoRecs {
-  margin-top: 1rem;
-}
-
-.aiseoRecsHint {
-  font-size: 0.8rem;
-  color: var(--app-text-secondary);
-  opacity: 0.9;
-  margin: 0 0 0.5rem;
-  line-height: 1.45;
-}
-
-.aiseoRecs ul {
-  margin: 0;
-  padding-left: 1.25rem;
-  font-size: 0.9rem;
-  color: var(--app-text-secondary);
-  line-height: 1.5;
 }
 
 .charts {
@@ -856,38 +800,6 @@
 
 .categoryChip strong {
   margin-left: 0.2rem;
-}
-
-.verification {
-  background: var(--app-surface-raised);
-  padding: 1.25rem 1.5rem;
-  border-radius: 10px;
-  border: 1px solid var(--app-border-panel);
-  margin-bottom: 1.5rem;
-  border-left: 4px solid var(--app-point);
-}
-
-.verification h3 {
-  margin: 0 0 0.75rem 0;
-  color: var(--app-text-bright);
-  font-size: 1rem;
-}
-
-.requirementBlock {
-  margin: 0 0 0.5rem 0;
-  padding: 0.5rem 0.75rem;
-  background: var(--app-surface-muted);
-  border-left: 4px solid var(--app-point);
-  font-size: 0.95rem;
-  color: var(--app-text-bright);
-  border-radius: 4px;
-}
-
-.verificationText {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--app-text-secondary);
 }
 
 .improvementGroup {

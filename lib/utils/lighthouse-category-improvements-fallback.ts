@@ -22,6 +22,7 @@ function itemToImprovement(item: LighthouseSummaryItem, reportCategory: ReportCa
   const desc = (item.description || '').replace(/\s+/g, ' ').trim().slice(0, 450)
   const dv = item.displayValue ? String(item.displayValue) : ''
   const parts = [desc, dv && `표시값: ${dv}`, pct != null && `감사 점수 ${pct}/100`].filter(Boolean) as string[]
+  const descriptionEnFull = (item.description || '').replace(/\s+/g, ' ').trim().slice(0, 2000)
   return {
     title,
     category: reportCategory,
@@ -37,6 +38,15 @@ function itemToImprovement(item: LighthouseSummaryItem, reportCategory: ReportCa
     matchesRequirement: false,
     requirementRelevance: `Lighthouse ${reportCategory} 자동 감사 근거`,
     priorityReason: pct != null ? `감사 점수 ${pct}` : 'Lighthouse 감사 미통과',
+    /** `generateReport`에서 LLM으로 한글·상세 필드 보강 후 제거 */
+    __lhAuditPayload: {
+      auditId: item.auditId,
+      titleEn: item.title,
+      descriptionEn: descriptionEnFull,
+      displayValue: dv,
+      score: item.score,
+      reportCategory,
+    },
   }
 }
 
