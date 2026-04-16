@@ -32,7 +32,7 @@ export const LOADING_MESSAGES = [
   '조금만 더 기다려 주세요.',
 ]
 
-export const LOADING_MESSAGE_INTERVAL_MS = 3000
+export const LOADING_MESSAGE_INTERVAL_MS = 5000
 
 export function getLoadingMessage(messageTick: number): string {
   const index = Math.min(messageTick, LOADING_MESSAGES.length - 1)
