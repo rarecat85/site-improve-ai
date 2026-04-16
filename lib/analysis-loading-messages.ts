@@ -1,7 +1,10 @@
 /**
- * 이동 직전에 홈(`page.tsx`의 `holdMandatoryPreNavMessage`)에서 **항상** 3초간 노출.
- * 순환 배열(`LOADING_MESSAGES`) 안에도 포함되어 자연 스크롤 중 한 번 나올 수 있음.
+ * 홈 `holdMandatoryPreNavMessage`: 순환 멘트가 **마지막 항목까지** 도달하지 않았고,
+ * 아직 **필수 문구가 순서상 나오기 전**이면 이동 직전에 필수 멘트를 잠시 띄우고 이 시간만큼 대기.
+ * (마지막 멘트까지 이미 본 경우·필수 문구 이후까지 진행된 경우에는 생략 — `page.tsx` 참고)
  */
+export const MANDATORY_PRE_NAV_HOLD_MS = 5000
+
 export const MANDATORY_PRE_NAV_LOADING_MESSAGE =
   '개발자 성과평가가 좋은 점수를 받도록 기원하는 중입니다.'
 
@@ -39,11 +42,11 @@ export function getLoadingMessage(messageTick: number): string {
   return LOADING_MESSAGES[index]
 }
 
-/** `LOADING_MESSAGES` 안에서 필수 문구가 나오는 틱 인덱스(참고). 이동 직전 노출은 틱과 무관하게 항상 수행 */
+/** `LOADING_MESSAGES` 안에서 필수 문구가 나오는 틱 인덱스(참고). 이동 직전 강제 노출은 조건부 — `page.tsx` */
 export const MANDATORY_PRE_NAV_MESSAGE_INDEX = LOADING_MESSAGES.indexOf(MANDATORY_PRE_NAV_LOADING_MESSAGE)
 
 /**
- * 비교 분석: URL 두 개를 같은 파이프라인으로 순차 실행하므로 로딩이 길어짐 — 전용 멘트를 앞에 붙인 뒤 `LOADING_MESSAGES`와 이어집니다.
+ * 비교 분석: URL 두 개를 같은 파이프라인으로 병렬 실행(또는 IndexedDB 재사용) — 전용 멘트를 앞에 붙인 뒤 `LOADING_MESSAGES`와 이어집니다.
  */
 export const COMPARE_LOADING_EXTRA = [
   '두개사이트를 한번에 분석을 시키다니.. 힘들지만 해야겠죠..',
@@ -59,7 +62,7 @@ export const COMPARE_LOADING_EXTRA = [
 
 export const COMPARE_LOADING_MESSAGES = [...COMPARE_LOADING_EXTRA, ...LOADING_MESSAGES]
 
-/** `COMPARE_LOADING_MESSAGES`에서 필수 문구 인덱스(참고). 이동 직전 노출은 단일·비교 공통으로 항상 수행 */
+/** `COMPARE_LOADING_MESSAGES`에서 필수 문구 인덱스(참고). 이동 직전 강제 노출은 조건부 — `page.tsx` */
 export const COMPARE_MANDATORY_PRE_NAV_MESSAGE_INDEX =
   COMPARE_LOADING_EXTRA.length + MANDATORY_PRE_NAV_MESSAGE_INDEX
 

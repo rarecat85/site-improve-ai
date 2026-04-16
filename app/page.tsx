@@ -10,6 +10,7 @@ import {
   getLoadingMessage,
   LOADING_MESSAGE_INTERVAL_MS,
   LOADING_MESSAGES,
+  MANDATORY_PRE_NAV_HOLD_MS,
   MANDATORY_PRE_NAV_LOADING_MESSAGE,
 } from '@/lib/analysis-loading-messages'
 import { AppModal } from '@/app/components/ui/AppModal'
@@ -21,12 +22,15 @@ import {
 } from '@/lib/constants/compare-session'
 import { REPORT_OPEN_META_SESSION_KEY, type ReportOpenMeta } from '@/lib/constants/report-session'
 import { fetchAnalyzeReportStream } from '@/lib/services/fetch-analyze-report-stream'
+import { REPORT_REUSE_MAX_AGE_MS } from '@/lib/constants/report-reuse'
 import {
   listSnapshotMetasMatchingUrl,
   loadReportPayloadFromIdbBySnapshotId,
+  loadReusableReportPayloadForCompare,
   saveReportPayloadToIdb,
   type ReportSnapshotListItem,
 } from '@/lib/storage/site-improve-report-idb'
+import type { ReportData } from '@/lib/types/report-data'
 import { useChromeNavVisibility } from '@/app/components/shell/chrome-nav-visibility'
 import styles from './page.module.css'
 
@@ -41,8 +45,6 @@ const FOCUS_OPTIONS: { id: string; label: string }[] = [
 ]
 
 const MAX_PRIORITIES = 3
-
-const MANDATORY_PRE_NAV_HOLD_MS = 3000
 
 function buildReportRequirementLine(priorityIds: string[]): string {
   if (!priorityIds.length) return '전체 항목 분석'
@@ -82,13 +84,32 @@ export default function Home() {
   const [emptyUrlModalOpen, setEmptyUrlModalOpen] = useState(false)
   const [compareUrlsModal, setCompareUrlsModal] = useState(false)
   const [compareSameUrlModal, setCompareSameUrlModal] = useState(false)
+  /** 비교 시 IndexedDB에 맞는 리포트가 있으면 재사용(끄면 항상 새로 분석) */
+  const [useCompareCache, setUseCompareCache] = useState(true)
   const urlInputRef = useRef<HTMLInputElement>(null)
+  const messageTickRef = useRef(0)
 
-  /** 결과 화면으로 넘어가기 직전, 필수 멘트를 항상 `MANDATORY_PRE_NAV_HOLD_MS`만큼 노출 */
-  const holdMandatoryPreNavMessage = async () => {
-    setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
-    await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
-    setLoadingSubtextOverride(null)
+  useEffect(() => {
+    messageTickRef.current = messageTick
+  }, [messageTick])
+
+  /**
+   * 마지막 순환 멘트까지 이미 도달했으면 생략.
+   * 너무 빨리 끝나 필수 문구가 순서상 아직 안 나왔을 때만 필수 멘트 + 지연(중복 방지).
+   */
+  const holdMandatoryPreNavMessage = async (kind: 'single' | 'comparison') => {
+    const messages = kind === 'comparison' ? COMPARE_LOADING_MESSAGES : LOADING_MESSAGES
+    const maxTick = messages.length - 1
+    const mandatoryIdx = messages.indexOf(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+    const tick = messageTickRef.current
+
+    if (tick >= maxTick) return
+
+    if (tick < mandatoryIdx) {
+      setLoadingSubtextOverride(MANDATORY_PRE_NAV_LOADING_MESSAGE)
+      await delayMs(MANDATORY_PRE_NAV_HOLD_MS)
+      setLoadingSubtextOverride(null)
+    }
   }
 
   useEffect(() => {
@@ -154,7 +175,7 @@ export default function Home() {
           return false
         }
       }
-      await holdMandatoryPreNavMessage()
+      await holdMandatoryPreNavMessage('single')
       try {
         const meta: ReportOpenMeta = { source: 'analyze' }
         sessionStorage.setItem(REPORT_OPEN_META_SESSION_KEY, JSON.stringify(meta))
@@ -253,13 +274,32 @@ export default function Home() {
     const reqLine = buildReportRequirementLine(priorities)
 
     try {
-      const reportA = await fetchAnalyzeReportStream(trimmedA, priorities, {
-        onStreamProgress: (v) => setProgress(v * 0.5),
-      })
-      setProgress(50)
-      const reportB = await fetchAnalyzeReportStream(trimmedB, priorities, {
-        onStreamProgress: (v) => setProgress(50 + v * 0.5),
-      })
+      const pa = { current: 0 }
+      const pb = { current: 0 }
+      const bumpProgress = () => setProgress(pa.current * 0.5 + pb.current * 0.5)
+
+      const loadSide = async (trimmed: string, box: { current: number }): Promise<ReportData> => {
+        if (useCompareCache) {
+          const cached = await loadReusableReportPayloadForCompare(
+            trimmed,
+            priorities,
+            REPORT_REUSE_MAX_AGE_MS
+          )
+          if (cached?.report) {
+            box.current = 100
+            bumpProgress()
+            return cached.report as ReportData
+          }
+        }
+        return fetchAnalyzeReportStream(trimmed, priorities, {
+          onStreamProgress: (v) => {
+            box.current = v
+            bumpProgress()
+          },
+        })
+      }
+
+      const [reportA, reportB] = await Promise.all([loadSide(trimmedA, pa), loadSide(trimmedB, pb)])
       setProgress(100)
 
       const session: CompareSessionV1 = {
@@ -281,7 +321,7 @@ export default function Home() {
         })
         return
       }
-      await holdMandatoryPreNavMessage()
+      await holdMandatoryPreNavMessage('comparison')
       navigated = true
       router.push('/compare')
     } catch (error) {
@@ -468,8 +508,9 @@ export default function Home() {
             </div>
             {mode === 'comparison' && (
               <p className={styles.stepHint}>
-                두 URL을 순서대로 동일한 분석 파이프라인에 넣습니다. 라이브 URL을 권장하며, 로컬 비교는 해당
-                주소에서 앱을 실행한 뒤 입력해 주세요.
+                두 URL에 대해 동일한 분석 파이프라인을 <strong>병렬</strong>로 실행합니다. 라이브 URL을 권장하며,
+                로컬 비교는 해당 주소에서 앱을 실행한 뒤 입력해 주세요. 아래에서 재사용을 끄면 매번 전체
+                분석만 수행합니다.
               </p>
             )}
             {mode === 'comparison' ? (
@@ -499,6 +540,19 @@ export default function Home() {
                     aria-label="비교 대상 두 번째 URL"
                   />
                 </div>
+                <label className={styles.compareCacheOption}>
+                  <input
+                    type="checkbox"
+                    checked={useCompareCache}
+                    onChange={(e) => setUseCompareCache(e.target.checked)}
+                    disabled={loading}
+                  />
+                  <span>
+                    최근 분석·저장 결과 재사용 (동일 URL·우선순위,{' '}
+                    {Math.round(REPORT_REUSE_MAX_AGE_MS / (60 * 60 * 1000))}
+                    시간 이내)
+                  </span>
+                </label>
               </div>
             ) : (
               <input

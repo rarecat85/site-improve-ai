@@ -230,6 +230,24 @@
   color: var(--app-text-muted);
 }
 
+.compareCacheOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.compareCacheOption input {
+  margin-top: 0.2rem;
+  accent-color: var(--app-point);
+  flex-shrink: 0;
+}
+
 /* Comparison mode: saved-report path (UI only, disabled) */
 .comparisonSavedSection {
   display: flex;

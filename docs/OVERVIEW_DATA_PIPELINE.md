@@ -19,6 +19,11 @@
     → report 객체 저장 → ReportView에서 표시
 ```
 
+### 1.1 비교 분석(홈 → `/compare`)
+
+- **요청**: URL A·B에 대해 각각 `POST /api/analyze`를 **병렬**로 호출합니다(`app/page.tsx`, `Promise.all`). 진행률은 두 스트림의 진행 값을 **가중 평균**해 표시합니다.
+- **캐시(옵션, 기본 켜짐)**: `loadReusableReportPayloadForCompare`(`lib/storage/site-improve-report-idb.ts`)로 **정규화 URL·우선순위 집합이 같고** `savedAt`이 `REPORT_REUSE_MAX_AGE_MS`(기본 24시간, `lib/constants/report-reuse.ts`) 이내인 **`latest` 또는 「저장된 분석」 스냅샷**이 있으면 해당 `report`만 쓰고 API를 호출하지 않습니다. 홈 비교 모드에서 체크박스로 끌 수 있습니다(항상 새로 분석).
+
 ---
 
 ## 2. Overview 상단 히어로 (미리보기 + 등급 그리드)
@@ -134,6 +139,7 @@ SEO·접근성·성능·모범사례·AEO/GEO·UX/UI·기타 탭의 **필터 규
 
 | 역할 | 경로 |
 |------|------|
+| 비교 트리거·병렬·IDB 재사용 | `app/page.tsx`, `lib/constants/report-reuse.ts`, `loadReusableReportPayloadForCompare` in `lib/storage/site-improve-report-idb.ts` |
 | 분석 오케스트레이션 | `app/api/analyze/route.ts` |
 | 브라우저·Lighthouse·axe·HTML 추출 | `lib/services/analyzer.ts`, `lib/utils/axe-runner.ts` |
 | 본문·메타 추출 | `lib/services/analyzer.ts` 내 `extractMetadataAndPageText` |

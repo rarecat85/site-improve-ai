@@ -5,6 +5,18 @@
 
 import { normalizeReportUrlForMatch } from '@/lib/utils/report-url'
 
+function prioritiesMatchForReuse(stored: string[] | undefined, requested: string[]): boolean {
+  const sa = [...(stored ?? [])].sort((a, b) => a.localeCompare(b))
+  const sb = [...requested].sort((a, b) => a.localeCompare(b))
+  if (sa.length !== sb.length) return false
+  return sa.every((v, i) => v === sb[i])
+}
+
+function reportPayloadLooksComplete(p: StoredReportPayload): boolean {
+  const r = p.report
+  return r != null && typeof r === 'object' && Array.isArray((r as { improvements?: unknown }).improvements)
+}
+
 const DB_NAME = 'site-improve-ai'
 const DB_VERSION = 2
 const STORE = 'reportSnapshots'
@@ -328,6 +340,41 @@ export async function deleteReportSnapshotById(id: string): Promise<void> {
 export async function hasSavedSnapshotsForUrl(url: string): Promise<boolean> {
   const rows = await listSnapshotMetasMatchingUrl(url)
   return rows.length > 0
+}
+
+/**
+ * 비교 분석용: API를 다시 호출하지 않고 쓸 수 있는 단일 리포트 페이로드.
+ * `latest` 또는 명시 저장 스냅샷 중, 정규화 URL·우선순위 집합이 같고 `savedAt`이 `maxAgeMs` 이내인 가장 신선한 항목.
+ */
+export async function loadReusableReportPayloadForCompare(
+  url: string,
+  priorities: string[],
+  maxAgeMs: number
+): Promise<StoredReportPayload | null> {
+  const now = Date.now()
+  const target = normalizeReportUrlForMatch(url)
+  if (!target) return null
+
+  const tryPayload = (p: StoredReportPayload | null): StoredReportPayload | null => {
+    if (!p || !reportPayloadLooksComplete(p)) return null
+    if (normalizeReportUrlForMatch(p.url) !== target) return null
+    if (!prioritiesMatchForReuse(p.priorities, priorities)) return null
+    const savedAt = typeof p.savedAt === 'number' ? p.savedAt : 0
+    const age = now - savedAt
+    if (age < 0 || age > maxAgeMs) return null
+    return p
+  }
+
+  const fromLatest = tryPayload(await loadReportPayloadFromIdb())
+  if (fromLatest) return fromLatest
+
+  const metas = await listSnapshotMetasMatchingUrl(url)
+  for (const meta of metas) {
+    const payload = await loadReportPayloadFromIdbBySnapshotId(meta.id)
+    const ok = tryPayload(payload)
+    if (ok) return ok
+  }
+  return null
 }
 
 /** 동일 URL의 저장 메타 목록, `savedAt` 내림차순 (가장 최근이 첫 번째) */
