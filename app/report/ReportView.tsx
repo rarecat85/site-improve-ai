@@ -213,10 +213,12 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   const [isPreview, setIsPreview] = useState(initialPreview)
   const [priorities, setPriorities] = useState<string[]>([])
   const [loadReady, setLoadReady] = useState(initialPreview)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'error'>('idle')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [infoModalMessage, setInfoModalMessage] = useState<string | null>(null)
+  /** 「결과 저장」 직후 생성된 스냅샷 키 — 삭제 UI에 사용 */
+  const [inlineSavedSnapshotId, setInlineSavedSnapshotId] = useState<string | null>(null)
 
   const useInsightTierUi = Boolean(reportData?.summary?.insightTier)
 
@@ -337,6 +339,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         }
       }
       if (ok) {
+        setInlineSavedSnapshotId(null)
         setOpenMeta(readReportOpenMeta())
         setActiveTab('all')
         try {
@@ -352,8 +355,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
 
   const requestDeleteConfirm = () => {
     if (!reportData || isPreview) return
-    if (openMeta.source !== 'restore') return
-    const snapshotId = openMeta.snapshotId
+    const snapshotId = openMeta.snapshotId ?? inlineSavedSnapshotId ?? undefined
     if (!snapshotId) {
       setInfoModalMessage('삭제할 저장 항목 정보를 찾을 수 없습니다. 메뉴에서 다시 열어 주세요.')
       return
@@ -362,7 +364,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
   }
 
   const performDeleteStored = async () => {
-    const snapshotId = openMeta.snapshotId
+    const snapshotId = openMeta.snapshotId ?? inlineSavedSnapshotId ?? undefined
     if (!snapshotId) return
     setDeleteConfirmOpen(false)
     setDeleteStatus('deleting')
@@ -378,6 +380,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
       } catch {
         /* ignore */
       }
+      setInlineSavedSnapshotId(null)
       router.push('/')
     } catch (e) {
       console.error('Delete stored report failed:', e)
@@ -386,11 +389,15 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
     }
   }
 
+  const showStoredDeleteFooter =
+    !isPreview &&
+    (Boolean(openMeta.source === 'restore' && openMeta.snapshotId) || Boolean(inlineSavedSnapshotId))
+
   const handleSaveResult = async () => {
     if (!reportData) return
     setSaveStatus('saving')
     try {
-      await saveReportPayloadToIdb(
+      const createdKey = await saveReportPayloadToIdb(
         {
           report: reportData,
           url,
@@ -399,6 +406,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         },
         { appendHistory: true }
       )
+      if (createdKey) setInlineSavedSnapshotId(createdKey)
       try {
         localStorage.setItem(
           'site-improve-report',
@@ -407,8 +415,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
       } catch {
         /* IndexedDB에 이미 있음 — localStorage 용량 초과 시 무시 */
       }
-      setSaveStatus('saved')
-      window.setTimeout(() => setSaveStatus('idle'), 2200)
+      setSaveStatus('idle')
     } catch (e) {
       console.error('Save to IndexedDB failed:', e)
       setSaveStatus('error')
@@ -587,18 +594,6 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
           <h3>높은 우선순위</h3>
           <p className={styles.summaryNumber}>{reportData.summary.highPriority}</p>
         </div>
-        {reportData.summary.insightTier ? (
-          <>
-            <div className={styles.summaryCard}>
-              <h3>핵심 개선 (등급·점검 연동)</h3>
-              <p className={styles.summaryNumber}>{reportData.summary.insightTier.primary}</p>
-            </div>
-            <div className={styles.summaryCard}>
-              <h3>추가 권장·최적화</h3>
-              <p className={styles.summaryNumber}>{reportData.summary.insightTier.supplementary}</p>
-            </div>
-          </>
-        ) : null}
       </section>
 
       {reportData.contentSummary && (
@@ -827,9 +822,6 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                           {supplementaryItems.length > 0 && (
                             <div className={styles.insightTierBlock}>
                               <h3 className={styles.insightTierHeading}>추가 권장·최적화</h3>
-                              <p className={styles.insightTierSubtext}>
-                                부분 통과·경미한 이슈·여지 위주로, 등급이 이미 높아도 남을 수 있는 항목입니다.
-                              </p>
                               <ImprovementCardsList items={supplementaryItems} />
                             </div>
                           )}
@@ -848,7 +840,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
 
       <footer className={styles.reportFooter}>
         {!isPreview &&
-          (openMeta.source === 'restore' ? (
+          (showStoredDeleteFooter ? (
             <button
               type="button"
               className={`${styles.reportFooterBtn} ${styles.reportFooterBtnDanger}`}
@@ -874,11 +866,9 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
             >
               {saveStatus === 'saving'
                 ? '저장 중…'
-                : saveStatus === 'saved'
-                  ? '저장됨'
-                  : saveStatus === 'error'
-                    ? '저장 실패 — 다시 시도'
-                    : '결과 저장'}
+                : saveStatus === 'error'
+                  ? '저장 실패 — 다시 시도'
+                  : '결과 저장'}
             </button>
           ))}
         {openMeta.fromCompare ? (
@@ -897,13 +887,20 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         >
           첫 화면으로
         </Link>
-        {(isPreview || openMeta.source === 'restore' || openMeta.fromCompare) && (
+        {(isPreview ||
+          openMeta.source === 'restore' ||
+          openMeta.fromCompare ||
+          inlineSavedSnapshotId) && (
           <p className={styles.reportFooterSaveHint}>
             {isPreview
               ? '미리보기 화면입니다. 실제 분석 결과가 아닙니다.'
               : openMeta.source === 'restore'
                 ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
-                : '비교 분석에서 연 상세 화면입니다. 아래 「비교 결과로」에서 요약 화면으로 돌아갈 수 있습니다.'}
+                : openMeta.fromCompare
+                  ? '비교 분석에서 연 상세 화면입니다. 아래 「비교 결과로」에서 요약 화면으로 돌아갈 수 있습니다.'
+                  : inlineSavedSnapshotId
+                    ? '방금 저장한 항목입니다. 삭제하면 사이드 메뉴 목록과 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
+                    : null}
           </p>
         )}
       </footer>

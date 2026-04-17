@@ -105,9 +105,10 @@ function parseCompareKeySort(key: string): number {
 export async function saveReportPayloadToIdb(
   payload: StoredReportPayload,
   options?: SaveReportToIdbOptions
-): Promise<void> {
+): Promise<string | undefined> {
   const appendHistory = options?.appendHistory !== false
   const db = await openDb()
+  let createdSnapshotKey: string | undefined
   try {
     const savedAt = Date.now()
     const record: StoredReportPayload = { ...payload, savedAt }
@@ -118,6 +119,7 @@ export async function saveReportPayloadToIdb(
       store.put(record, KEY_LATEST)
       if (appendHistory) {
         const snapKey = `${SNAP_PREFIX}${savedAt}-${Math.random().toString(36).slice(2, 9)}`
+        createdSnapshotKey = snapKey
         store.put(record, snapKey)
       }
       tx.oncomplete = () => resolve()
@@ -148,6 +150,7 @@ export async function saveReportPayloadToIdb(
   } finally {
     db.close()
   }
+  return createdSnapshotKey
 }
 
 export async function loadReportPayloadFromIdb(): Promise<StoredReportPayload | null> {
