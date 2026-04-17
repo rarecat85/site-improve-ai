@@ -65,7 +65,9 @@ Lighthouse 카테고리·감사(audit) 점수는 원본이 0~1이면 **×100 후
 
 ### 모범 사례 (Best practices)
 
-- Lighthouse **Best practices** 카테고리 점수만 사용.
+1. 우선 Lighthouse **`categories['best-practices'].score`**(0~1)를 0~100으로 환산합니다.
+2. 일부 실행·URL에서는 이 카테고리만 **`score`가 `null`**이고 SEO·성능·접근성 등은 정상인 경우가 있습니다. 이때는 LHR의 **`categories['best-practices'].auditRefs` 가중치**와 **`audits[감사id].score`**로 같은 0~100 스케일의 점수를 복원합니다(`lhCategoryScoreFromAudits` — `lib/utils/grade-calculator.ts`).
+3. 위 둘 모두로 점수를 만들 수 없을 때만 카드는 **Lighthouse 미실행**(`—`)으로 표시됩니다.
 
 ### 보안
 

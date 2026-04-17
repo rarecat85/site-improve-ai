@@ -105,6 +105,37 @@ function lhScore(cat: any): number | null {
   return Math.round(Math.max(0, Math.min(1, s)) * 100)
 }
 
+/**
+ * 일부 환경에서 특정 카테고리만 `categories[id].score`가 null로 오는 경우가 있어(다른 카테고리는 정상),
+ * LHR에 포함된 auditRefs·audits 가중 평균으로 0~100을 복원합니다.
+ */
+function lhCategoryScoreFromAudits(lhr: any, categoryId: string): number | null {
+  const cat = lhr?.categories?.[categoryId]
+  const refs = cat?.auditRefs
+  const audits = lhr?.audits
+  if (!Array.isArray(refs) || !refs.length || !audits || typeof audits !== 'object') return null
+  let wSum = 0
+  let weighted = 0
+  for (const ref of refs) {
+    const id = ref?.id
+    const w = typeof ref?.weight === 'number' ? ref.weight : 0
+    if (!id || w <= 0) continue
+    const a = audits[id]
+    const s = a?.score
+    if (typeof s !== 'number' || Number.isNaN(s)) continue
+    weighted += w * Math.max(0, Math.min(1, s))
+    wSum += w
+  }
+  if (wSum <= 0) return null
+  return Math.round((weighted / wSum) * 100)
+}
+
+function lhBestPracticesScore100(lhr: any): number | null {
+  const direct = lhScore(lhr?.categories?.['best-practices'])
+  if (direct != null) return direct
+  return lhCategoryScoreFromAudits(lhr, 'best-practices')
+}
+
 function auditScore(lhr: any, id: string): number | null {
   const a = lhr?.audits?.[id]
   const s = a?.score
@@ -332,7 +363,7 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
   const seo = lhScore(lhr?.categories?.seo)
   const perf = lhScore(lhr?.categories?.performance)
   const accLh = lhScore(lhr?.categories?.accessibility)
-  const bp = lhScore(lhr?.categories?.['best-practices'])
+  const bp = lhBestPracticesScore100(lhr)
   const penalty = accLh != null ? accessibilityAxePenaltyApplied(accLh, axePenaltyRaw) : 0
   const axeAdj = accLh != null ? Math.max(0, accLh - penalty) : null
   const accessibility = axeAdj ?? accLh ?? 70

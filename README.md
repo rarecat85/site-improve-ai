@@ -38,7 +38,7 @@ URL과 분석 관심 영역(우선순위)을 입력하면, **Lighthouse·axe·AE
 - **관심 영역(우선순위)**: 아무것도 고르지 않으면 대시보드 **기본 가중**(성능·접근성·AEO 등)으로 전체 점수를 냅니다. **최대 3개를 고르면** 해당 축(SEO·성능·접근성·모범사례·Security·마크업·AEO/GEO)이 **등급 산정에서 가장 높은 비중**을 갖도록 가중치를 조정하고, 개선안 목록에서도 **같은 영역 항목을 상단**에 둡니다(`resolveDashboardWeightsForPriorities`, `improvementMatchesUserFocus`).
 - **비교 분석**: URL A/B + **동일한 우선순위 설정**으로 **각각 동일 API 파이프라인을 병렬 호출**(`Promise.all`) → 요약 지표 나란히 표시 → 필요 시 A/B 각각 전체 리포트로 이동. 서버에서는 **Lighthouse 실행만 프로세스당 한 번에 한 건**(`lib/utils/lighthouse-mutex.ts`의 `runWithLighthouseLock`)으로 직렬화해, 두 URL이 동시에 Lighthouse 두 개를 돌리며 타임아웃·미실행이 나는 경우를 줄입니다(Puppeteer·페이지 분석·CrUX·aiseo 등은 요청별로 겹칠 수 있음). **IndexedDB**에 정규화 URL·우선순위가 같고 `savedAt`이 **24시간 이내**인 단일 리포트(`latest` 또는 「저장된 분석」 스냅샷)가 있으면 **API·LLM을 건너뛰고 재사용**할 수 있으며, 홈 비교 모드에서 체크박스로 끌 수 있습니다(`lib/constants/report-reuse.ts`, `loadReusableReportPayloadForCompare`). 전반 우세는 **개선 항목 개수만**이 아니라 `dashboard` 규칙 기반 **가중** 카드(로컬 포함 시 보안 카드 제외)·품질·이슈 부담을 섞은 **복합 점수**를 우선하며, 동률일 때만 이슈 수·높은 우선·AEO 순으로 보조 판단합니다(`compareEffectiveCompositeWinner`).
 - **결과 저장**: 브라우저 **IndexedDB**에 단일 리포트·비교 세션을 저장하고, 메뉴에서 다시 열기(다른 기기·브라우저에는 전송되지 않음)
-- **대시보드 등급**: AI가 아닌 **규칙 기반**(`computeDashboardGrades`)으로 Lighthouse·axe·HTTP 메타·aiseo 등을 점수화해 리포트에 포함. **성능**은 Lighthouse Performance **한 카테고리**만 상단에 두고, 이미지·JS 세부 감사는 **성능 탭 개선안** 등에서만 반영합니다.
+- **대시보드 등급**: AI가 아닌 **규칙 기반**(`computeDashboardGrades`)으로 Lighthouse·axe·HTTP 메타·aiseo 등을 점수화해 리포트에 포함. **성능**은 Lighthouse Performance **한 카테고리**만 상단에 두고, 이미지·JS 세부 감사는 **성능 탭 개선안** 등에서만 반영합니다. **모범 사례**는 Lighthouse가 카테고리 `score`만 비울 때 **감사 가중 평균**으로 보정([`docs/GRADE_CRITERIA.md`](docs/GRADE_CRITERIA.md)).
 
 ---
 

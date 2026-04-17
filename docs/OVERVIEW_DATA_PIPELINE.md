@@ -38,7 +38,7 @@
 
 ### 2.2 항목별 등급 카드 (OVERALL, SEO, 성능, …)
 
-**백엔드**에서는 `lib/services/ai.ts`의 `generateReport(..., priorities?)`가 `computeDashboardGrades`( `lib/utils/grade-calculator.ts` )를 호출해 **Lighthouse·axe·HTTP 응답 메타·aiseo** 등을 규칙 기반으로 0~100점화하고, 등급·상태 문자열을 만든 뒤 **`report.dashboard`**·**`report.priorities`**(선택 시)에 넣습니다. 홈에서 관심 영역을 고르면 **가중치가 해당 축에 집중**하고, 개선안 목록도 같은 기준으로 정렬됩니다. 세부 구간·감사 ID는 [GRADE_CRITERIA.md](./GRADE_CRITERIA.md) 참고.
+**백엔드**에서는 `lib/services/ai.ts`의 `generateReport(..., priorities?)`가 `computeDashboardGrades`( `lib/utils/grade-calculator.ts` )를 호출해 **Lighthouse·axe·HTTP 응답 메타·aiseo** 등을 규칙 기반으로 0~100점화하고, 등급·상태 문자열을 만든 뒤 **`report.dashboard`**·**`report.priorities`**(선택 시)에 넣습니다. 홈에서 관심 영역을 고르면 **가중치가 해당 축에 집중**하고, 개선안 목록도 같은 기준으로 정렬됩니다. **모범 사례** 카드는 `categories['best-practices'].score`가 비어 있을 때 해당 카테고리 **감사(audit) 가중 평균**으로 보정할 수 있습니다(다른 Lighthouse 카드와 달리 `score` 누락이 잦은 경우 대비). 세부 구간·감사 ID는 [GRADE_CRITERIA.md](./GRADE_CRITERIA.md) 참고.
 
 **프론트**(`app/report/ReportView.tsx`)에서는 히어로 그리드를 **`reportData.dashboard.cards` 그대로** 그립니다(위 백엔드 산출과 동일). `dashboard`가 없는 **구 저장 리포트**만 `qualityAudit`·`aiseo`로 일부 카드를 채우고, 나머지는 `—`·안내 문구로 둡니다(재분석 시 전체 등급 표시).
 
