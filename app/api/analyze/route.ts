@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
       body = await request.json()
       console.log('Request body parsed successfully')
     } catch (parseError) {
-      console.error('Failed to parse request body:', parseError)
       return NextResponse.json(
         { error: '요청 본문을 파싱할 수 없습니다. JSON 형식을 확인해주세요.' },
         { status: 400 }
@@ -115,10 +114,7 @@ export async function POST(request: NextRequest) {
             step: 1.05,
           })
           const analysisPromise = analyzeWebsite(url)
-          const cruxPromise = fetchCruxSummary(url).catch((e) => {
-            console.warn('CrUX failed:', e)
-            return null
-          })
+          const cruxPromise = fetchCruxSummary(url).catch(() => null)
           const analysisResults = await analysisPromise
           const cruxResult = await cruxPromise
           stopRamp1()
@@ -200,8 +196,8 @@ export async function POST(request: NextRequest) {
                 audienceBehaviorDetail: contentInsights.audienceBehaviorDetail,
               })
               if (similarSites?.length) report.similarSites = similarSites
-            } catch (e) {
-              console.warn('findSimilarSites failed:', e)
+            } catch {
+              /* 유사 사이트 생략 */
             } finally {
               stopRamp4()
             }
@@ -212,7 +208,6 @@ export async function POST(request: NextRequest) {
           send({ type: 'report', report })
           sendProgress(100)
         } catch (streamError: any) {
-          console.error('Analysis error:', streamError)
           const errorMessage = userFacingAnalysisError(
             streamError?.message || '분석 중 오류가 발생했습니다.'
           )
@@ -230,8 +225,6 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error('Analysis error:', error)
-    
     const errorMessage =
       error instanceof Error
         ? userFacingAnalysisError(error.message)

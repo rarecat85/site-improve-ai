@@ -44,13 +44,13 @@
 
 ---
 
-## 3. Overview — 요약 숫자 3칸 (`reportData.summary`)
+## 3. Overview — 요약 숫자 카드 (`reportData.summary`)
 
 | 표시 | 출처 | 설명 |
 |------|------|------|
 | 개선 추천 사항 건수 | `generateReport` | 카테고리별 LLM이 만든 `improvements` 배열 길이 기반 `summary.totalIssues` |
 | 높은 우선순위 | 동일 | `priority === 'high'` 개수 등 `summary.highPriority` |
-| 예상 효과 문구 | 동일 | `summary.estimatedImpact` 등 고정 문구에 가까운 요약 필드 |
+| 핵심 개선 / 추가 권장·최적화 (선택) | 동일 | `summary.insightTier`가 있을 때만 두 칸 추가 — 등급·자동 점검 연동 건수 vs 보조 건수 |
 
 개선 항목 본문은 **Lighthouse / axe / aiseo-audit** 결과를 프롬프트에 넣고 **OpenAI·Anthropic·Gemini**가 카테고리별로 생성합니다. **AEO/GEO**는 Gemini 전담이며, 프롬프트에서 **사용자 대면 필드 한국어**를 요구합니다. **Overview 대시보드**에서 AEO/GEO **전체 점수·등급**을 이미 보여 주므로, **AEO/GEO 탭**에는 **`aiseo.categories`가 있을 때만** 카테고리 점수 칩을 추가하고, 권장 문구는 `generateReport`에서 **`translateStringsToKoreanStrict`**로 가능한 한 한국어로 맞춘 `parsed.aiseo`를 사용합니다(상세는 [REPORT_CATEGORY_TABS.md](./REPORT_CATEGORY_TABS.md) **§5.2**). 규칙 폴백 경로(접근성·성능·모범사례·AEO/GEO·Security)는 각각 Gemini로 카드 필드를 보강합니다(`lib/services/ai.ts`). 공통 맥락(`metaLines`)에는 **페이지 통계·CrUX·HTTP 응답 메타(보안 헤더 등)**도 포함되며, SEO 전용으로는 **DOM에서 뽑은 JSON-LD(`@type`) 요약**이 추가됩니다(아래 §7·동 문서).
 

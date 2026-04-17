@@ -599,18 +599,7 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
             </div>
           </>
         ) : null}
-        <div className={styles.summaryCard}>
-          <h3>예상 효과</h3>
-          <p className={styles.summaryText}>{reportData.summary.estimatedImpact}</p>
-        </div>
       </section>
-      {reportData.summary.insightTier ? (
-        <p className={styles.insightTierOverviewNote}>
-          「핵심 개선」은 대시보드 등급·Lighthouse·axe 등 자동 점검과 직접 맞닿은 항목이고, 「추가 권장」은 같은
-          분석에서 나온 여지·최적화입니다. 전체 건수는 변하지 않으며, 등급이 높을 때는 추가 권장 비중이 늘 수
-          있습니다.
-        </p>
-      ) : null}
 
       {reportData.contentSummary && (
         <section className={styles.sectionBlock} aria-label="사이트 목적 분석">
@@ -832,9 +821,6 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
                           {primaryItems.length > 0 && (
                             <div className={styles.insightTierBlock}>
                               <h3 className={styles.insightTierHeading}>핵심 개선 (등급·자동 점검과 연동)</h3>
-                              <p className={styles.insightTierSubtext}>
-                                Lighthouse 실패·axe 심각 위반·높은 우선순위 등, 카드 점수에 더 직접 맞닿은 과제입니다.
-                              </p>
                               <ImprovementCardsList items={primaryItems} />
                             </div>
                           )}
@@ -911,15 +897,15 @@ export default function ReportView({ initialPreview = false }: ReportViewProps) 
         >
           첫 화면으로
         </Link>
-        <p className={styles.reportFooterSaveHint}>
-          {isPreview
-            ? '미리보기 화면입니다. 실제 분석 결과가 아닙니다.'
-            : openMeta.source === 'restore'
-              ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
-              : openMeta.fromCompare
-                ? '비교 분석에서 연 상세 화면입니다. 아래 「비교 결과로」에서 요약 화면으로 돌아갈 수 있습니다. 결과 저장은 이 브라우저의 IndexedDB에 보관됩니다.'
-                : '결과 저장은 이 브라우저의 IndexedDB에 보관됩니다. 저장할 때마다 별도 항목으로 쌓이며, 메뉴에서 항목별로 열거나 삭제할 수 있습니다. 같은 호스트·포트(예: localhost:3000)로 열어야 목록이 이어집니다. 다른 기기·시크릿 창·포트가 다르면 목록이 비어 보일 수 있습니다.'}
-        </p>
+        {(isPreview || openMeta.source === 'restore' || openMeta.fromCompare) && (
+          <p className={styles.reportFooterSaveHint}>
+            {isPreview
+              ? '미리보기 화면입니다. 실제 분석 결과가 아닙니다.'
+              : openMeta.source === 'restore'
+                ? '저장 목록에서 연 항목입니다. 삭제하면 이 브라우저 저장소에서 제거되며 복구할 수 없습니다.'
+                : '비교 분석에서 연 상세 화면입니다. 아래 「비교 결과로」에서 요약 화면으로 돌아갈 수 있습니다.'}
+          </p>
+        )}
       </footer>
     </div>
     <AppModal

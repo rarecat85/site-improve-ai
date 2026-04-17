@@ -36,7 +36,6 @@ export const MOCK_REPORT_PREVIEW: ReportData = {
     totalIssues: 15,
     highPriority: 5,
     insightTier: { primary: 10, supplementary: 5 },
-    estimatedImpact: '요구사항 반영 항목 우선 개선 시 전환율·접근성 개선 기대',
     byCategory: { SEO: 3, 접근성: 2, 'UX/UI': 3, 성능: 2, 모범사례: 1, Security: 2, 'AEO/GEO': 2 },
     priorityCriteria: '요구사항에 맞는 항목을 우선 추천하고, 그 외 기본 분석 항목도 모두 포함했습니다.',
     requirementAlignment:

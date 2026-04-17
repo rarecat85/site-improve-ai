@@ -114,24 +114,42 @@ function auditScore(lhr: any, id: string): number | null {
 
 /** axe 규칙별 1건당 가중(영향도). 노드 수가 아니라 규칙(위반 유형) 단위. */
 const AXE_IMPACT_WEIGHT: Record<string, number> = {
-  critical: 9,
-  serious: 6,
-  moderate: 3.5,
-  minor: 1.5,
+  critical: 7,
+  serious: 5,
+  moderate: 2.8,
+  minor: 1.2,
 }
+
+/** 위반 가중 합의 원시 상한(완화·Lighthouse 연동 전) */
+const AXE_PENALTY_RAW_CAP = 24
 
 function axePenalty100FromViolations(violations: unknown): number {
   if (!Array.isArray(violations) || violations.length === 0) return 0
   let sum = 0
   for (const v of violations) {
     if (!v || typeof v !== 'object') {
-      sum += 3
+      sum += 2.5
       continue
     }
     const imp = String((v as { impact?: string }).impact ?? '').toLowerCase()
-    sum += AXE_IMPACT_WEIGHT[imp] ?? 3
+    sum += AXE_IMPACT_WEIGHT[imp] ?? 2.5
   }
-  return Math.min(30, sum)
+  return Math.min(AXE_PENALTY_RAW_CAP, sum)
+}
+
+/**
+ * Lighthouse 접근성 점수가 이미 높을수록 axe 감점을 줄여, 동일 이슈에 대한 이중 페널을 완화합니다.
+ * 최종적으로 `accessibility` 카드에 반영되는 감점은 `AXE_PENALTY_FINAL_CAP` 이하로 제한합니다.
+ */
+const AXE_PENALTY_FINAL_CAP = 20
+
+function accessibilityAxePenaltyApplied(accLh: number, rawPenalty: number): number {
+  if (rawPenalty <= 0) return 0
+  let p = rawPenalty
+  if (accLh >= 83) p = p * 0.68
+  else if (accLh >= 77) p = p * 0.78
+  else if (accLh >= 71) p = p * 0.88
+  return Math.min(AXE_PENALTY_FINAL_CAP, Math.round(p))
 }
 
 /**
@@ -309,12 +327,13 @@ export function computeDashboardGrades(input: GradeCalculatorInput): {
 } {
   const lhr = input.lighthouse
   const axeViolations = input.axe?.violations
-  const penalty = axePenalty100FromViolations(axeViolations)
+  const axePenaltyRaw = axePenalty100FromViolations(axeViolations)
 
   const seo = lhScore(lhr?.categories?.seo)
   const perf = lhScore(lhr?.categories?.performance)
   const accLh = lhScore(lhr?.categories?.accessibility)
   const bp = lhScore(lhr?.categories?.['best-practices'])
+  const penalty = accLh != null ? accessibilityAxePenaltyApplied(accLh, axePenaltyRaw) : 0
   const axeAdj = accLh != null ? Math.max(0, accLh - penalty) : null
   const accessibility = axeAdj ?? accLh ?? 70
 

@@ -36,7 +36,8 @@ export interface ReportData {
   summary: {
     totalIssues: number
     highPriority: number
-    estimatedImpact: string
+    /** @deprecated UI 미사용 — 구 저장 리포트 호환용 */
+    estimatedImpact?: string
     byCategory?: Record<string, number>
     priorityCriteria?: string
     requirementAlignment?: string

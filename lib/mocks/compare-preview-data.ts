@@ -39,7 +39,6 @@ const MOCK_REPORT_PREVIEW_B: ReportData = {
     ...MOCK_REPORT_PREVIEW.summary,
     totalIssues: 18,
     highPriority: 6,
-    estimatedImpact: '핵심 항목 개선 시 전환율·검색 노출·접근성에서 비교 우위 기대',
     byCategory: { ...MOCK_REPORT_PREVIEW.summary.byCategory, SEO: 5, 성능: 3, 접근성: 3 },
   },
   aiseo: MOCK_REPORT_PREVIEW.aiseo

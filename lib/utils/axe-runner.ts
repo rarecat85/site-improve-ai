@@ -26,8 +26,7 @@ export async function runAxe(page: Page) {
     })
 
     return results
-  } catch (error) {
-    console.error('Axe execution error:', error)
+  } catch {
     return { error: 'axe-core 실행 중 오류가 발생했습니다.' }
   }
 }

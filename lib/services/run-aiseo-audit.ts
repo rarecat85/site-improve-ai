@@ -23,8 +23,7 @@ export async function runAiseoAudit(url: string): Promise<any> {
     ])
 
     return result
-  } catch (error) {
-    console.error('aiseo-audit error:', error)
+  } catch {
     return null
   }
 }

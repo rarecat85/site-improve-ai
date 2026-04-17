@@ -133,9 +133,7 @@ async function settlePageDomForArchitecture(page: Page): Promise<void> {
       concurrency: ARCH_NETWORK_IDLE_CONCURRENCY,
     })
   } catch {
-    console.warn(
-      '[analyzer] waitForNetworkIdle timed out or failed — architecture DOM may miss late requests'
-    )
+    /* network idle 타임아웃 시에도 이후 단계 진행 */
   }
 
   try {
@@ -227,8 +225,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
         isMobile: screen.mobile,
       })
       await page.setUserAgent(ua)
-    } catch (emuErr) {
-      console.warn('[analyzer] Viewport/UA emulation fallback (using browser defaults):', emuErr)
+    } catch {
+      /* 기본 뷰포트/UA 사용 */
     }
 
     // Lighthouse 실행 (Puppeteer 브라우저 재사용)
@@ -278,10 +276,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
 
       lighthouseResult = lighthouseResult?.lhr
       console.log('Lighthouse completed')
-    } catch (lighthouseError: any) {
-      console.error('Lighthouse error:', lighthouseError)
-      // Lighthouse 실패해도 계속 진행 (Puppeteer 분석은 수행)
-      console.warn('Lighthouse 분석을 건너뜁니다. Puppeteer 분석만 수행합니다.')
+    } catch {
+      /* Lighthouse 실패 시 Puppeteer 분석만 계속 */
     }
 
     console.log('Navigating to page...')
@@ -371,14 +367,9 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
             `[analyzer] pageText/metadata: keeping 1st snapshot (${pageText.length} chars); settled ${settled.pageText.length} chars not richer`
           )
         }
-      } else {
-        console.warn(
-          `[analyzer] 2nd HTML too short (${archHtml?.length ?? 0}) — screenshot & architecture use 1st snapshot`
-        )
       }
-    } catch (archErr) {
-      console.warn('[analyzer] Secondary DOM / screenshot failed:', archErr)
-      console.log('[analyzer] Screenshot & architecture input fall back to 1st snapshot')
+    } catch {
+      /* 2차 DOM/스크린샷 실패 시 1차 스냅샷 유지 */
     }
 
     try {
@@ -443,8 +434,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
           textlessInteractive: { links, buttons },
         }
       })
-    } catch (e) {
-      console.warn('[analyzer] markupStats collection failed:', e)
+    } catch {
+      /* markupStats 생략 */
     }
 
     let mobileSignals: AnalysisResults['mobileSignals'] | undefined
@@ -518,8 +509,8 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
           tapTargetsOverlappingCount,
         }
       })
-    } catch (e) {
-      console.warn('[analyzer] mobileSignals collection failed:', e)
+    } catch {
+      /* mobileSignals 생략 */
     }
 
     try {
@@ -592,11 +583,10 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
     if (browser) {
       try {
         await browser.close()
-      } catch (e) {
-        console.error('Error closing browser:', e)
+      } catch {
+        /* ignore */
       }
     }
-    console.error('Analyzer error:', error)
     throw error
   }
 }

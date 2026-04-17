@@ -17,8 +17,8 @@ export async function scrollPageForLazyContent(page: Page): Promise<void> {
       window.scrollTo(0, 0)
       await delay(200)
     })
-  } catch (e) {
-    console.warn('scrollPageForLazyContent:', e)
+  } catch {
+    /* 스크롤 생략 */
   }
 }
 
