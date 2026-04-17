@@ -8,6 +8,7 @@
 ## 1. Lighthouse·Puppeteer 측정 전제
 
 - **Lighthouse** 호출 시 `lighthouse/core/config/constants`와 동일한 **폼 팩터·스크린 에뮬레이션·UA·스로틀링**을 플래그로 명시합니다. (`throttlingMethod: simulate`, 기본 **desktop**은 **desktopDense4G** 등 Lighthouse 데스크톱 프리셋과 동일)
+- **동시 실행**: Node 프로세스 안에서는 **`runWithLighthouseLock`**(`lib/utils/lighthouse-mutex.ts`)으로 **한 번에 Lighthouse 한 건만** 돌립니다. 비교 분석처럼 `POST /api/analyze`가 두 개 동시에 와도 Lighthouse는 대기열에 들어가 순서대로 실행되며, Puppeteer·CrUX·aiseo 등 다른 단계는 요청별로 겹칠 수 있습니다.
 - **Puppeteer**로 DOM·axe·스크린샷을 잡는 탭은, Lighthouse 모바일/데스크톱 프리셋과 **같은 뷰포트·User-Agent**를 `page.goto` 전에 적용해, **성능 감사와 본문 분석의 화면 전제**를 맞춥니다.
 
 ### 환경 변수
@@ -15,6 +16,7 @@
 | 변수 | 값 | 설명 |
 |------|-----|------|
 | `ANALYSIS_FORM_FACTOR` | `desktop`(기본) 또는 `mobile` | Lighthouse·Puppeteer 공통 에뮬레이션 프리셋 |
+| `LIGHTHOUSE_TIMEOUT_MS` | 정수, **30000~300000**(코드에서 클램프), 미설정 시 **90000** | **한 번의 Lighthouse 호출**이 이 시간 안에 끝나지 않으면 타임아웃으로 중단하고 나머지 분석은 계속합니다(`lib/services/analyzer.ts`). 대기열에서 두 번째로 실행될 때도 동일 상한이 적용됩니다. |
 
 저장 HTML로 재생하지 않고 **매번 실 URL을 연다**는 전제는 유지합니다. **짧은 시간 안에 연속 실행**하면 원격 페이지·CDN 상태가 비슷해져 비교에 유리한 경우가 많습니다.
 
@@ -43,6 +45,8 @@
 
 ## 3. 구현 위치
 
-- 측정: `lib/services/analyzer.ts` (Lighthouse 플래그 + `page.setViewport` / `setUserAgent`)
+- 측정: `lib/services/analyzer.ts` (Lighthouse 플래그 + `page.setViewport` / `setUserAgent` + `Promise.race` 타임아웃)
+- Lighthouse 직렬 락: `lib/utils/lighthouse-mutex.ts`
+- Lighthouse 타임아웃 기본값·`LIGHTHOUSE_TIMEOUT_MS` 파싱: `getLighthouseTimeoutMs()` in `lib/constants/analysis-pipeline.ts`
 - 폼 팩터 상수: `lib/constants/measurement.ts`
 - LLM: `lib/config/llm.ts`, `lib/services/ai.ts`의 `callOpenAI` / `callClaude` / `callGemini` (Gemini는 주 모델 + `GEMINI_FALLBACK_MODELS` 연쇄; 유료 실패 시 `callOpenAiOrGeminiFallback` / `callClaudeOrGeminiFallback`)

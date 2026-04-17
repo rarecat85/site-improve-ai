@@ -2,12 +2,17 @@
 import puppeteer, { type Page } from 'puppeteer'
 import * as cheerio from 'cheerio'
 import { runAxe } from '@/lib/utils/axe-runner'
-import { MIN_VIABLE_HTML_LENGTH, MIN_PAGE_TEXT_FOR_INSIGHTS } from '@/lib/constants/analysis-pipeline'
+import {
+  getLighthouseTimeoutMs,
+  MIN_VIABLE_HTML_LENGTH,
+  MIN_PAGE_TEXT_FOR_INSIGHTS,
+} from '@/lib/constants/analysis-pipeline'
 import type { AnalysisResults } from '@/lib/types/analysis-results'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { PageStatsSummary, ResponseMetaSummary } from '@/lib/utils/grade-calculator'
 import { extractResponseMeta } from '@/lib/utils/grade-calculator'
+import { runWithLighthouseLock } from '@/lib/utils/lighthouse-mutex'
 import { collectPageStats, scrollPageForLazyContent } from '@/lib/utils/page-stats'
 import { getAnalysisFormFactor } from '@/lib/constants/measurement'
 
@@ -261,12 +266,15 @@ export async function analyzeWebsite(url: string): Promise<AnalysisResults> {
         emulatedUserAgent,
       }
 
-      lighthouseResult = await Promise.race([
-        lighthouse(url, options),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Lighthouse timeout')), 60000)
-        ),
-      ]) as any
+      const lhTimeoutMs = getLighthouseTimeoutMs()
+      lighthouseResult = (await runWithLighthouseLock(() =>
+        Promise.race([
+          lighthouse(url, options),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Lighthouse timeout (${lhTimeoutMs}ms)`)), lhTimeoutMs)
+          ),
+        ])
+      )) as any
 
       lighthouseResult = lighthouseResult?.lhr
       console.log('Lighthouse completed')

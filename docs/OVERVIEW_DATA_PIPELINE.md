@@ -9,7 +9,7 @@
 ```
 [클라이언트] URL + priorities
     → POST /api/analyze
-        → analyzeWebsite (Puppeteer, Lighthouse, axe, Cheerio … — Lighthouse·동일 탭 뷰포트/UA/스로틀 프리셋은 [`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) 참고)
+        → analyzeWebsite (Puppeteer, Lighthouse, axe, Cheerio … — **Lighthouse는 프로세스당 1건 직렬** `runWithLighthouseLock`, 단일 실행 타임아웃은 `getLighthouseTimeoutMs()` / `LIGHTHOUSE_TIMEOUT_MS`. Lighthouse·동일 탭 뷰포트/UA/스로틀 프리셋은 [`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) 참고)
         → fetchCruxSummary (선택, Chrome UX Report API)
         → runAiseoAudit (aiseo-audit · AEO/GEO)
         → generateReport (다중 LLM + computeDashboardGrades, URL 정책 포함)
@@ -22,6 +22,7 @@
 ### 1.1 비교 분석(홈 → `/compare`)
 
 - **요청**: URL A·B에 대해 각각 `POST /api/analyze`를 **병렬**로 호출합니다(`app/page.tsx`, `Promise.all`). 진행률은 두 스트림의 진행 값을 **가중 평균**해 표시합니다.
+- **Lighthouse**: 두 요청이 동시에 있어도 **Lighthouse 실행만** `lib/utils/lighthouse-mutex.ts`에서 **FIFO로 한 번에 한 건**(나머지 분석 단계는 요청별로 진행). 비교 시 한쪽이 Lighthouse 대기열에서 기다릴 수 있으며, 상한은 `LIGHTHOUSE_TIMEOUT_MS`(기본 90000ms, `lib/constants/analysis-pipeline.ts`의 `getLighthouseTimeoutMs()`).
 - **캐시(옵션, 기본 켜짐)**: `loadReusableReportPayloadForCompare`(`lib/storage/site-improve-report-idb.ts`)로 **정규화 URL·우선순위 집합이 같고** `savedAt`이 `REPORT_REUSE_MAX_AGE_MS`(기본 24시간, `lib/constants/report-reuse.ts`) 이내인 **`latest` 또는 「저장된 분석」 스냅샷**이 있으면 해당 `report`만 쓰고 API를 호출하지 않습니다. 홈 비교 모드에서 체크박스로 끌 수 있습니다(항상 새로 분석).
 
 ---
@@ -141,7 +142,8 @@ SEO·접근성·성능·모범사례·AEO/GEO·UX/UI·기타 탭의 **필터 규
 |------|------|
 | 비교 트리거·병렬·IDB 재사용 | `app/page.tsx`, `lib/constants/report-reuse.ts`, `loadReusableReportPayloadForCompare` in `lib/storage/site-improve-report-idb.ts` |
 | 분석 오케스트레이션 | `app/api/analyze/route.ts` |
-| 브라우저·Lighthouse·axe·HTML 추출 | `lib/services/analyzer.ts`, `lib/utils/axe-runner.ts` |
+| 브라우저·Lighthouse·axe·HTML 추출 | `lib/services/analyzer.ts`, `lib/utils/lighthouse-mutex.ts`, `lib/utils/axe-runner.ts` |
+| Lighthouse 타임아웃 상수 | `getLighthouseTimeoutMs()` — `lib/constants/analysis-pipeline.ts` |
 | 본문·메타 추출 | `lib/services/analyzer.ts` 내 `extractMetadataAndPageText` |
 | 페이지 구조 추출 | `lib/utils/page-architecture.ts` |
 | 인사이트·유사 사이트·구조 요약·리포트 | `lib/services/ai.ts` |
